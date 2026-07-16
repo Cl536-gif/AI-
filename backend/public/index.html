@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>AI秘书</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="app__header">AI秘书</header>
+
+  <main id="messages" class="app__messages" aria-live="polite"></main>
+
+  <form id="composer" class="app__composer">
+    <textarea
+      id="input"
+      class="app__input"
+      placeholder="输入消息…"
+      rows="1"
+      autocomplete="off"
+    ></textarea>
+    <button id="send" type="submit" class="app__send">发送</button>
+  </form>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const config = require('./config');
@@ -13,6 +14,8 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/chat', chatRouter);
+
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use((req, res) => {
   res.status(404).json({ error: '接口不存在' });
