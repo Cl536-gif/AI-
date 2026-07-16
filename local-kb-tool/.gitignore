@@ -1,0 +1,7 @@
+node_modules/
+data/
+.env
+npm-debug.log*
+
+# 知识库原文可能是未公开的业务资料，默认不提交，只在本地保留
+kb-docs/*.docx
