@@ -26,6 +26,7 @@ local-kb-tool/
 │   ├── chunker.js           # 按段落切分成小片段
 │   ├── embedder.js          # 用 @xenova/transformers 做本地 embedding
 │   ├── vectorStore.js       # 封装 vectra：建索引 / 存 / 查
+│   ├── keywordScore.js      # 关键词重合度打分，查询时跟语义相似度混合排序
 │   ├── buildIndex.js        # npm run build-index 的入口
 │   └── query.js             # npm run query 的入口
 ├── .env.example
@@ -60,6 +61,15 @@ npm run query -- "怎么瘦肚子"
 | `KB_EMBEDDING_MODEL` | `Xenova/bge-small-zh-v1.5` | 本地 embedding 模型，需是 transformers.js 支持的模型（中文场景不建议换成纯英文模型，见下方说明） |
 | `KB_QUERY_INSTRUCTION` | （内置 BGE 官方推荐前缀） | 查询时自动加在问题前面的检索指令前缀，换了非 BGE 模型可以设成空字符串关掉 |
 | `KB_HF_ENDPOINT` | `https://huggingface.co` | 下载 embedding 模型的地址，国内连不上/超时时改成 `https://hf-mirror.com`（URL 结构兼容，直接替换即可） |
+| `KB_KEYWORD_WEIGHT` | `0.35` | 混合检索里关键词重合度的权重（0~1），语义相似度权重 = 1 减去这个值，设成 0 即为纯语义检索 |
+
+### 关于混合检索（语义 + 关键词）
+
+`query.js` 现在不是单纯按向量相似度排序，而是：语义检索先取一批候选片段（比默认返回数量多几倍），对每个候选片段额外算一个"关键词重合度"分数（`keywordScore.js`，用字符 bigram 重合比例，不依赖任何中文分词库），再按 `综合分 = (1 - KB_KEYWORD_WEIGHT) × 语义分 + KB_KEYWORD_WEIGHT × 关键词分` 重新排序取前几名。
+
+加这个是因为发现了一个真实案例：查"需要注册吗"时，FAQ 里精确匹配的问答（"Q：需要注册吗？"）语义相似度只有 0.5552，被一段话题相关但答非所问的产品背景介绍（0.5590）反超排到第 1。这段背景介绍文字量大、反复出现"秘书""饮食规划"等产品相关词，容易被 `bge-small`（一个比较轻量的模型）误判成语义相关；而关键词重合度上，FAQ 那句因为原文就有"注册"这两个字，重合度是 1.0，背景介绍是 0。混合之后综合分变成 0.71 vs 0.36，排序正确了。
+
+查询结果里会同时打印三个分数（综合 / 语义 / 关键词），方便看清楚一个片段是靠语义还是靠关键词排上来的。
 
 ### 关于 embedding 模型的选择
 
