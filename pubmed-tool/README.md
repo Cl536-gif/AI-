@@ -93,7 +93,9 @@ disordered eating prevention diet coaching
 - 预筛选规则（`prefilter.js`）能正确识别动物实验、过旧文献、摘要过短，并给出具体原因
 - 候选清单生成 + 人工勾选 + 回读解析（`candidateList.js`）完整跑通往返测试，勾选 `[x]` 后能正确提取出对应文献的完整信息
 
-**没有验证过的部分**：真实调用 NCBI E-utilities（`esearch` / `efetch`）。这个开发环境的出站网络策略挡住了 `eutils.ncbi.nlm.nih.gov`（跟之前 backend 连不上阿里云、local-kb-tool 连不上 Hugging Face 是同一类限制），错误处理确认是干净报错、不影响前面验证过的逻辑，但实际抓取效果（真实检索结果数量、XML 格式跟示例是否完全一致等）需要你在本地联网环境跑通 `npm run fetch-pubmed` 验证。
+**没有验证过的部分**：真实调用 NCBI E-utilities（`esearch` / `efetch`）。这个开发环境的出站网络策略挡住了 `eutils.ncbi.nlm.nih.gov`（跟之前 backend 连不上阿里云、local-kb-tool 连不上 Hugging Face 是同一类限制），错误处理确认是干净报错、不影响前面验证过的逻辑。
+
+后来在实际本地环境（真实调用 NCBI 接口）跑通了完整流程：6 个关键词共检索到 82 篇文献，预筛选保留 67 篇、剔除 15 篇，候选清单正常生成。跑的过程中发现并修复了一个真实问题：部分文献的标题/摘要/期刊/作者名里，重音字母和数学符号（如 `è`、`≥`）不是标准 XML 转义，而是以 HTML 数字实体的字面文本形式存在（`&#xe9;`、`&#x2265;` 这种），XML 解析库不会自动处理这种情况，导致清单里原样显示这些代码。`pubmedClient.js` 的 `textOf()` 现在会对提取出的每个字段统一做一次实体解码（数字实体 + `&amp; &lt; &gt; &quot; &apos; &nbsp;` 这几个常见命名实体），修复后特殊字符能正常显示。
 
 ## 后续（第五部分，暂不做）
 

@@ -52,10 +52,32 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+const NAMED_HTML_ENTITIES = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+/**
+ * 部分 PubMed 记录里的特殊字符（重音字母、数学符号等）不是标准 XML 转义，
+ * 而是以 HTML 数字实体的字面文本形式存在（比如 "&#xe8;"、"&#x2265;"），
+ * XML 解析库不会处理这种情况，需要单独解码一次。
+ */
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, name) => NAMED_HTML_ENTITIES[name]);
+}
+
 function textOf(node) {
   if (node === undefined || node === null) return '';
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (typeof node === 'object' && '#text' in node) return String(node['#text']);
+  if (typeof node === 'string' || typeof node === 'number') return decodeHtmlEntities(String(node));
+  if (typeof node === 'object' && '#text' in node) return decodeHtmlEntities(String(node['#text']));
   return '';
 }
 
@@ -137,4 +159,4 @@ async function fetchArticles(pmids) {
   return articles;
 }
 
-module.exports = { searchPmids, fetchArticles, parseArticleXml, sleep, REQUEST_DELAY_MS };
+module.exports = { searchPmids, fetchArticles, parseArticleXml, decodeHtmlEntities, sleep, REQUEST_DELAY_MS };
