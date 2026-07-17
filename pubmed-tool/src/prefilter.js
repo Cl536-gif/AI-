@@ -1,6 +1,7 @@
 const config = require('./config');
 
-const ANIMAL_STUDY_REGEX = /\b(mice|mouse|rat|rats|rodent|rodents|murine|animal model|zebrafish)\b/i;
+const ANIMAL_STUDY_REGEX =
+  /\b(mice|mouse|rat|rats|rodent|rodents|murine|animal model|zebrafish|turkeys|bee|bees|cricket|crickets|cat|cats|pig|pigs|swine|fish|tilapia|cow|cows|cattle|bovine|chicken|chickens|poultry|broiler|deer)\b/i;
 const CLINICAL_NONDIET_REGEX = /\b(surgery|surgical|pharmacological|pharmacology|drug therapy|chemotherapy)\b/i;
 
 /**

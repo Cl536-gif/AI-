@@ -40,14 +40,26 @@ function formatRejectedLine(article) {
   return `- [${article.pmid}] ${article.title || '（无标题）'} —— ${article.filterReasons.join('；')}`;
 }
 
+// AI 打分为 1 分（"基本不相关"）的文献，会从主列表挪到末尾的低相关性分组里，
+// 减少人工翻阅主列表时的干扰；仍然保留复选框，人工不同意 AI 判断时依然可以勾选保留。
+const LOW_RELEVANCE_SCORE = 1;
+
 /** 生成候选清单 Markdown 文本；kept 里每条带 [ ] 复选框供人工勾选 */
 function renderCandidateMarkdown({ keywords, kept, rejected, generatedAt }) {
+  const mainKept = kept.filter((a) => a.aiScore !== LOW_RELEVANCE_SCORE);
+  const lowRelevance = kept.filter((a) => a.aiScore === LOW_RELEVANCE_SCORE);
+
+  const countLine = lowRelevance.length > 0
+    ? `候选文献数：${kept.length}（其中 ${lowRelevance.length} 篇 AI 打分为 ${LOW_RELEVANCE_SCORE} 分、` +
+      `已归入文末"低相关性文献"分组；预筛选剔除 ${rejected.length} 篇，详见文末）`
+    : `候选文献数：${kept.length}（预筛选剔除 ${rejected.length} 篇，详见文末）`;
+
   const lines = [
     '# PubMed 候选文献清单',
     '',
     `生成时间：${generatedAt}`,
     `关键词：${keywords.join(' | ')}`,
-    `候选文献数：${kept.length}（预筛选剔除 ${rejected.length} 篇，详见文末）`,
+    countLine,
     '',
     '使用方法：审阅每篇的标题和摘要，把想保留的那一项的 `[ ]` 改成 `[x]`，' +
       '改完保存后运行 `npm run collect-kept -- <这份文件的路径>` 生成"已保留"清单。',
@@ -56,9 +68,17 @@ function renderCandidateMarkdown({ keywords, kept, rejected, generatedAt }) {
     '',
   ];
 
-  kept.forEach((article, i) => {
+  mainKept.forEach((article, i) => {
     lines.push(formatArticleBlock(article, i + 1));
   });
+
+  if (lowRelevance.length > 0) {
+    lines.push(`## 低相关性文献（AI 打分 ${LOW_RELEVANCE_SCORE} 分，建议优先跳过，仍可按需勾选保留）`);
+    lines.push('');
+    lowRelevance.forEach((article, i) => {
+      lines.push(formatArticleBlock(article, mainKept.length + i + 1));
+    });
+  }
 
   if (rejected.length > 0) {
     lines.push('## 预筛选剔除清单（仅供核查筛选规则是否合理，不需要处理）');
