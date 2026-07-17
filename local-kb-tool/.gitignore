@@ -4,4 +4,5 @@ data/
 npm-debug.log*
 
 # 知识库原文可能是未公开的业务资料，默认不提交，只在本地保留
-kb-docs/*.docx
+# 用 **/*.docx 而不是 *.docx，是为了同时覆盖 --kb <名字> 用的 kb-docs/<名字>/ 子目录
+kb-docs/**/*.docx

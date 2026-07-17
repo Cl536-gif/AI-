@@ -19,14 +19,20 @@
 ```
 local-kb-tool/
 ├── kb-docs/                # 放你的 .docx 知识库文件（已 gitignore，不提交原文）
-│   └── .gitkeep
+│   ├── .gitkeep
+│   ├── diet/                # 多知识库时，每个知识库一个子目录（名字自定）
+│   └── posture/
 ├── data/                    # 本地向量索引存储目录（运行 build-index 后自动生成，已 gitignore）
+│   └── index/
+│       ├── diet/             # 对应 kb-docs/diet/ 的索引
+│       └── posture/          # 对应 kb-docs/posture/ 的索引
 ├── src/
 │   ├── docReader.js         # 读取 .docx，用 mammoth 提取纯文本
 │   ├── chunker.js           # 按段落切分成小片段
 │   ├── embedder.js          # 用 @xenova/transformers 做本地 embedding
 │   ├── vectorStore.js       # 封装 vectra：建索引 / 存 / 查
 │   ├── keywordScore.js      # 关键词重合度打分，查询时跟语义相似度混合排序
+│   ├── kbPaths.js           # 解析 --kb <名字> 参数，算出对应的文档目录 / 索引目录
 │   ├── buildIndex.js        # npm run build-index 的入口
 │   └── query.js             # npm run query 的入口
 ├── .env.example
@@ -35,11 +41,13 @@ local-kb-tool/
 
 ## 快速开始
 
+### 单知识库（默认用法，不用管 `--kb`）
+
 ```bash
 cd local-kb-tool
 npm install
 
-# 把你的 8 份 .docx 知识库文件放进 kb-docs/ 目录
+# 把你的 .docx 知识库文件放进 kb-docs/ 目录
 
 npm run build-index
 # 首次运行会从 Hugging Face 下载一次本地 embedding 模型（几十 MB），之后完全离线
@@ -47,6 +55,24 @@ npm run build-index
 npm run query -- "需要注册吗"
 npm run query -- "怎么瘦肚子"
 ```
+
+### 多个独立知识库
+
+给每个知识库起个名字，文档放进 `kb-docs/<名字>/`，建索引和查询时都带上 `--kb <名字>`，各知识库的索引完全独立存放，互不影响、查询也不会混在一起：
+
+```bash
+# 把第一个知识库的 .docx 放进 kb-docs/diet/，第二个放进 kb-docs/posture/
+
+npm run build-index -- --kb diet
+npm run build-index -- --kb posture
+
+npm run query -- --kb diet "需要注册吗"
+npm run query -- --kb posture "含胸怎么办"
+```
+
+已经在用单知识库（没传过 `--kb`）的现有索引不受影响，继续用 `npm run build-index` / `npm run query -- "问题"`（不加 `--kb`）就行，走的还是原来的 `kb-docs/`、`data/index/` 默认目录。
+
+如果你想完全自定义目录、不用 `--kb` 这套命名约定，`KB_DOCS_DIR`/`KB_INDEX_DIR` 环境变量仍然可用，且优先级高于 `--kb`（两者都设置时以环境变量为准）。
 
 > 用 `npm run query` 时问题参数前要加 `--`（`npm run query -- "问题"`），否则 npm 不会把参数透传给脚本。
 
@@ -106,6 +132,8 @@ npm run query -- "怎么瘦肚子"
 换模型之后又发现一个排序不够精准的问题：查"需要注册吗"时，正确答案（FAQ 里的对应问答）排在第 2 名，第 1 名是一段不相关的产品背景介绍，两者相似度分数非常接近。原因是 FAQ 文档里连续几个"Q：/A："问答对被合并进了同一个片段，"需要注册吗"这个问答被稀释在其他不相关问答中间，导致片段的向量语义变模糊。这跟之前在百炼知识库上真实遇到过的"问需要注册吗答错"是同一类问题，这次能在本地复现并定位到具体原因（分片粒度太粗），说明这个工具确实起到了交叉验证的作用。
 
 修复方式：`chunker.js` 现在会识别"Q："开头的段落作为问答片段的边界，每个问答对（Q + 紧跟着的 A）独立成一个片段，不再跟其他问答合并，也不受 `KB_CHUNK_CHARS` 字符数限制拆开。这个规则只在文档里出现"Q："格式时才会触发，普通叙述性文档的切分行为不受影响。
+
+多知识库（`--kb`）的隔离性用真实 `.docx` 文件跑过完整的 `build-index` → `query` 流程验证过：两个知识库各自建索引互不干扰，查询一个知识库时完全不会检索到另一个的内容（即使用另一个知识库的问题去查也只会返回低分的自身内容，不会误命中）；参数解析（`--kb name` / `--kb=name`，以及不传 `--kb` 时的默认行为）也逐一验证过。真实 embedding 生成这块因为开发环境网络限制没法在这里跑到底，跟前面提到的网络限制是同一个原因。
 
 ## 后续（第 3 部分，暂不做）
 

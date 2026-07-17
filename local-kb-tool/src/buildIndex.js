@@ -1,16 +1,17 @@
 require('dotenv').config();
-const path = require('path');
 const { readDocxFiles } = require('./docReader');
 const { chunkText } = require('./chunker');
 const { embedTexts } = require('./embedder');
 const { createStore, ensureIndexReady, addChunk } = require('./vectorStore');
+const { parseKbArg, resolveKbPaths } = require('./kbPaths');
 
-const KB_DOCS_DIR = process.env.KB_DOCS_DIR || path.join(__dirname, '..', 'kb-docs');
-const INDEX_DIR = process.env.KB_INDEX_DIR || path.join(__dirname, '..', 'data', 'index');
+const { kbName } = parseKbArg(process.argv.slice(2));
+const { docsDir: KB_DOCS_DIR, indexDir: INDEX_DIR } = resolveKbPaths(kbName);
 const MAX_CHUNK_CHARS = Number(process.env.KB_CHUNK_CHARS) || 500;
 const EMBED_BATCH_SIZE = 16;
 
 async function main() {
+  console.log(`知识库: ${kbName || '（默认）'}`);
   console.log(`读取文档目录: ${KB_DOCS_DIR}`);
   const docs = await readDocxFiles(KB_DOCS_DIR);
   if (docs.length === 0) {

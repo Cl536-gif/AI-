@@ -1,10 +1,9 @@
 require('dotenv').config();
-const path = require('path');
 const { embedQuery } = require('./embedder');
 const { createStore, queryTopK } = require('./vectorStore');
 const { keywordOverlapScore } = require('./keywordScore');
+const { parseKbArg, resolveKbPaths } = require('./kbPaths');
 
-const INDEX_DIR = process.env.KB_INDEX_DIR || path.join(__dirname, '..', 'data', 'index');
 const TOP_K = Number(process.env.KB_TOP_K) || 5;
 const CANDIDATE_POOL = Math.max(TOP_K * 3, 15);
 
@@ -16,16 +15,19 @@ const KEYWORD_WEIGHT = process.env.KB_KEYWORD_WEIGHT !== undefined
   : 0.35;
 
 async function main() {
-  const question = process.argv.slice(2).join(' ').trim();
+  const { kbName, rest } = parseKbArg(process.argv.slice(2));
+  const { indexDir: INDEX_DIR } = resolveKbPaths(kbName);
+  const question = rest.join(' ').trim();
+
   if (!question) {
-    console.error('请提供查询问题，例如: npm run query -- "需要注册吗"');
+    console.error('请提供查询问题，例如: npm run query -- "需要注册吗"（多知识库用 npm run query -- --kb posture "问题"）');
     process.exitCode = 1;
     return;
   }
 
   const index = createStore(INDEX_DIR);
   if (!(await index.isIndexCreated())) {
-    console.error(`索引不存在，请先运行 npm run build-index（目录: ${INDEX_DIR}）`);
+    console.error(`索引不存在（知识库: ${kbName || '默认'}），请先运行 npm run build-index${kbName ? ` -- --kb ${kbName}` : ''}（目录: ${INDEX_DIR}）`);
     process.exitCode = 1;
     return;
   }
