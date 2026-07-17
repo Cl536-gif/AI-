@@ -2,7 +2,7 @@
 
 对应《PubMed 文献自动抓取与预筛选工具·需求文档》核心功能清单的第一到第四部分（第五部分"定时自动运行"暂不实现，先做成手动触发脚本）：
 
-- [x] 1. 关键词检索 —— 默认 5 个关键词，可在 `.env` 里覆盖
+- [x] 1. 关键词检索 —— 默认 6 个关键词，可在 `.env` 里覆盖
 - [x] 2. 调用 PubMed 官方 E-utilities 抓取标题/摘要/作者/期刊/年份/PMID/链接
 - [x] 3. 自动预筛选（动物实验、发表过早、摘要过短、疑似纯药物/手术类研究）
 - [x] 4. 候选清单展示与人工确认（Markdown 文件 + 复选框）
@@ -52,7 +52,7 @@ npm run collect-kept -- candidates/candidates-2026-07-17.md
 
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
-| `PUBMED_KEYWORDS` | 需求文档给的 5 个默认关键词 | 自定义关键词列表，用 `\|` 分隔 |
+| `PUBMED_KEYWORDS` | 见下方默认关键词列表 | 自定义关键词列表，用 `\|` 分隔 |
 | `PUBMED_RESULTS_PER_KEYWORD` | `15` | 每个关键词抓取最新文献的数量 |
 | `PUBMED_API_KEY` | 无 | NCBI API Key，不填限速约 3 次/秒，申请后约 10 次/秒（免费申请：NCBI 账号设置里的 API Key Management） |
 | `PUBMED_EMAIL` / `PUBMED_TOOL_NAME` | 无 / `pubmed-tool` | NCBI 建议携带的调用方身份信息，非强制 |
@@ -60,6 +60,19 @@ npm run collect-kept -- candidates/candidates-2026-07-17.md
 | `PUBMED_MAX_AGE_YEARS` | `15` | 没填 `PUBMED_MIN_YEAR` 时，用这个值算最早年份 |
 | `PUBMED_MIN_ABSTRACT_LENGTH` | `200` | 摘要字符数低于这个值会被预筛选掉 |
 | `PUBMED_OUTPUT_DIR` | `./candidates` | 候选清单 / 已保留清单的输出目录 |
+
+### 默认关键词列表
+
+```
+female college students weight management
+young women dietary intervention
+spot reduction adipose tissue
+regional fat loss exercise
+BMI body composition young adults
+disordered eating prevention diet coaching
+```
+
+需求文档原本给的"spot reduction myth / localized fat loss"这个关键词实测在 PubMed 检索不到任何文献（措辞偏口语化，跟论文标题摘要常用的学术用词对不上）。换成了 `spot reduction adipose tissue` 和 `regional fat loss exercise` 两个更学术化的说法，覆盖"局部减脂"这个方向。
 
 ## 预筛选规则
 

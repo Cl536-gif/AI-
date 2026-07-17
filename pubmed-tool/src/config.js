@@ -3,7 +3,8 @@ require('dotenv').config();
 const DEFAULT_KEYWORDS = [
   'female college students weight management',
   'young women dietary intervention',
-  'spot reduction myth localized fat loss',
+  'spot reduction adipose tissue',
+  'regional fat loss exercise',
   'BMI body composition young adults',
   'disordered eating prevention diet coaching',
 ];
