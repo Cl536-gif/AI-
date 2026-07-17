@@ -31,6 +31,9 @@ const RETRY_DELAY_MS = 2000;
  * 部分网络环境下 NCBI 连接会被中间设备偶发重置（ECONNRESET），
  * 单次失败就让整个脚本中断代价太大，这里做几次重试再放弃。
  */
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
 async function eutilsRequest(endpoint, params) {
   const url = `${BASE_URL}/${endpoint}?${params.toString()}`;
 
