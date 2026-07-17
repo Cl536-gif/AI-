@@ -20,6 +20,7 @@ pubmed-tool/
 │   ├── prefilter.js         # 自动预筛选规则
 │   ├── candidateList.js     # 生成候选清单 Markdown / 解析人工勾选结果
 │   ├── fetchPubmed.js       # npm run fetch-pubmed 的入口
+│   ├── markKept.js          # npm run mark-kept 的入口（可选的批量勾选方式）
 │   └── collectKept.js       # npm run collect-kept 的入口
 ├── candidates/               # 生成的候选清单 / 已保留清单（已 gitignore，只保留 .gitkeep）
 ├── .env.example
@@ -39,6 +40,12 @@ npm run fetch-pubmed
 跑完会在 `candidates/` 目录生成一份 `candidates-<日期>.md`，控制台也会提示具体路径。
 
 打开这份文件（用任何文本编辑器，或者 VS Code / Typora 这种支持 Markdown 复选框预览的编辑器都行），逐条看标题和摘要，想保留的那条把 `- [ ] 保留` 改成 `- [x] 保留`，改完保存。
+
+如果已经确定好篇号（比如先在别处记好了"第 8、10、11 篇要留"），也可以用脚本批量勾选，不用逐条手动改：
+
+```bash
+npm run mark-kept -- candidates/candidates-2026-07-17.md 8 10 11 14 16
+```
 
 然后跑：
 
