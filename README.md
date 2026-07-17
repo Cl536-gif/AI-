@@ -18,3 +18,4 @@
 
 - `backend/` — Node.js + Express 服务，同时托管聊天前端页面和后端中间层。详见 `backend/README.md`。
 - `local-kb-tool/` — 本地知识库交叉验证工具（读取 .docx、本地向量化检索），跟百炼结果对比暂未实现。详见 `local-kb-tool/README.md`。
+- `pubmed-tool/` — PubMed 文献自动抓取与预筛选工具（关键词检索、抓取摘要、自动预筛选、候选清单人工确认），定时自动运行暂未实现。详见 `pubmed-tool/README.md`。

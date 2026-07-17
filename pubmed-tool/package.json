@@ -1,0 +1,18 @@
+{
+  "name": "pubmed-tool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PubMed 文献自动抓取与预筛选工具 —— 关键词检索、抓取摘要、自动预筛选、生成候选清单供人工确认",
+  "main": "src/fetchPubmed.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "fetch-pubmed": "node src/fetchPubmed.js",
+    "collect-kept": "node src/collectKept.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fast-xml-parser": "^5.10.1"
+  }
+}

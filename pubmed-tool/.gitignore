@@ -1,0 +1,7 @@
+node_modules/
+.env
+npm-debug.log*
+
+# 每次抓取生成的候选清单/已保留清单，属于运行输出，不提交
+candidates/*.md
+!candidates/.gitkeep
