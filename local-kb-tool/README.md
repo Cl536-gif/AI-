@@ -57,8 +57,15 @@ npm run query -- "怎么瘦肚子"
 | `KB_INDEX_DIR` | `./data/index` | 本地向量索引存储目录 |
 | `KB_CHUNK_CHARS` | `500` | 每个片段的最大字符数（按段落切分，不会切碎单个段落，超长段落才会硬切） |
 | `KB_TOP_K` | `5` | 查询时返回的最相关片段数量 |
-| `KB_EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | 本地 embedding 模型，需是 transformers.js 支持的模型 |
+| `KB_EMBEDDING_MODEL` | `Xenova/bge-small-zh-v1.5` | 本地 embedding 模型，需是 transformers.js 支持的模型（中文场景不建议换成纯英文模型，见下方说明） |
+| `KB_QUERY_INSTRUCTION` | （内置 BGE 官方推荐前缀） | 查询时自动加在问题前面的检索指令前缀，换了非 BGE 模型可以设成空字符串关掉 |
 | `KB_HF_ENDPOINT` | `https://huggingface.co` | 下载 embedding 模型的地址，国内连不上/超时时改成 `https://hf-mirror.com`（URL 结构兼容，直接替换即可） |
+
+### 关于 embedding 模型的选择
+
+最开始用的是 `Xenova/all-MiniLM-L6-v2`，实测发现完全不同的两个中文问题（"需要注册吗" vs "怎么瘦肚子"）检索出来的相似度最高片段是同一个、且跟问题都不相关——这个模型主要是英文语料训练的，中文语义理解能力很弱，生成的向量对中文来说接近噪音，排序不可靠。
+
+换成了 **`Xenova/bge-small-zh-v1.5`**（BAAI 出的中文专用 embedding 模型），并按官方建议给查询文本加了检索指令前缀（存文档片段时不加，只在查询时加，见 `embedder.js` 的 `embedQuery`），检索相关性明显改善。如果之后想换其他模型，选 transformers.js 支持、且明确训练过中文或多语言语料的模型（比如 `Xenova/paraphrase-multilingual-MiniLM-L12-v2`），不要用纯英文模型。
 
 ## 常见问题（国内网络环境）
 
@@ -80,16 +87,11 @@ npm run query -- "怎么瘦肚子"
   ```
   然后重新运行 `npm run build-index`。
 
-## 已验证的部分
+## 验证情况
 
-在开发环境里已经验证过（用程序生成的示例 `.docx` 测试文件）：
+在开发环境里验证过（用程序生成的示例 `.docx` 测试文件）：`.docx` 读取 + 按段落切分逻辑、向量存储/检索链路（写入、按相似度排序、附带来源文档名和片段序号）都正确。开发环境本身出站网络连不上 Hugging Face 和 GitHub（`sharp` 依赖的下载源），所以真实 embedding 生成这一步没法在这里跑，这两处都是网络限制，不是代码问题。
 
-- `.docx` 读取 + 按段落切分逻辑正确，中文段落、超长段落硬切都符合预期
-- 向量存储/检索链路（写入、按相似度排序返回、附带来源文档名和片段序号）正确
-
-**没有验证过的部分**：真实的 `@xenova/transformers` embedding 生成。这个开发环境的出站网络策略挡住了 Hugging Face（下载模型）和一个 npm 依赖 `sharp` 的安装源（GitHub Releases），所以 `npm run build-index` 在这里跑不通，报错发生在生成向量那一步，不是文档读取或存储这两块的问题。这两处都是网络访问限制，不是代码逻辑问题——在正常联网的本地环境里 `npm install` 应该能顺利装好 `sharp`（它是一个很成熟的包，各平台都有预编译包），`npm run build-index` 首次运行下载模型后也能正常生成向量。
-
-请你在本地跑通 `npm install && npm run build-index && npm run query -- "需要注册吗"` 验证一下真实效果；如果报错，把报错信息发给我，我再针对性排查。
+后来在实际本地环境（真实 8 份知识库文档）里跑通了完整流程，并且发现并修复了一个真实问题：最初用的 `Xenova/all-MiniLM-L6-v2` 是英文模型，对中文检索效果很差（两个完全不同的问题会命中同一个不相关片段），换成中文专用的 `Xenova/bge-small-zh-v1.5` 之后检索相关性明显改善（详见上面"关于 embedding 模型的选择"）。
 
 ## 后续（第 3 部分，暂不做）
 

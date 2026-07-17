@@ -1,4 +1,11 @@
-const MODEL_NAME = process.env.KB_EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2';
+const MODEL_NAME = process.env.KB_EMBEDDING_MODEL || 'Xenova/bge-small-zh-v1.5';
+
+// BGE 系列模型官方建议：查询文本前面加这个指令前缀，检索效果会明显更好；
+// 存文档片段时不需要加。换了非 BGE 模型可以把 KB_QUERY_INSTRUCTION 设成空字符串关掉。
+const QUERY_INSTRUCTION =
+  process.env.KB_QUERY_INSTRUCTION !== undefined
+    ? process.env.KB_QUERY_INSTRUCTION
+    : '为这个句子生成表示以用于检索相关文章：';
 
 let extractorPromise = null;
 
@@ -17,15 +24,24 @@ function getExtractor() {
   return extractorPromise;
 }
 
-/** 把一批文本转成向量（数组的数组），首次调用会下载/加载本地 embedding 模型 */
-async function embedTexts(texts) {
+async function embed(text) {
   const extractor = await getExtractor();
+  const output = await extractor(text, { pooling: 'mean', normalize: true });
+  return Array.from(output.data);
+}
+
+/** 把一批文档片段转成向量（数组的数组），建索引时用 */
+async function embedTexts(texts) {
   const vectors = [];
   for (const text of texts) {
-    const output = await extractor(text, { pooling: 'mean', normalize: true });
-    vectors.push(Array.from(output.data));
+    vectors.push(await embed(text));
   }
   return vectors;
 }
 
-module.exports = { embedTexts };
+/** 把一个查询问题转成向量，查询时用（会自动加检索指令前缀） */
+async function embedQuery(text) {
+  return embed(QUERY_INSTRUCTION + text);
+}
+
+module.exports = { embedTexts, embedQuery };

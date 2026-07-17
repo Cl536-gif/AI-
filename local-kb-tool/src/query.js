@@ -1,6 +1,6 @@
 require('dotenv').config();
 const path = require('path');
-const { embedTexts } = require('./embedder');
+const { embedQuery } = require('./embedder');
 const { createStore, queryTopK } = require('./vectorStore');
 
 const INDEX_DIR = process.env.KB_INDEX_DIR || path.join(__dirname, '..', 'data', 'index');
@@ -21,7 +21,7 @@ async function main() {
     return;
   }
 
-  const [vector] = await embedTexts([question]);
+  const vector = await embedQuery(question);
   const results = await queryTopK(index, vector, TOP_K);
 
   console.log(`\n问题: ${question}\n`);
