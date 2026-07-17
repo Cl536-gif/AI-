@@ -32,6 +32,7 @@ pubmed-tool/
 │   ├── weeklyUpdate.js      # npm run weekly-update 的入口（增量抓取 + AI 打分排序，可配 cron 定时跑）
 │   ├── runLog.js            # 每次 weekly-update 运行都往 logs/weekly-update.log 追加一条记录
 │   ├── rescueCandidate.js   # npm run rescue-candidate 的入口（把被预筛选误判排除的文献手动加回候选清单）
+│   ├── rebuildFromProcessed.js  # npm run rebuild-from-processed 的入口（候选清单文件丢失时的应急重建）
 │   ├── markKept.js          # npm run mark-kept 的入口（可选的批量勾选方式）
 │   └── collectKept.js       # npm run collect-kept 的入口
 ├── candidates/               # 生成的候选清单 / 已保留清单（已 gitignore，只保留 .gitkeep）
@@ -169,6 +170,25 @@ npm run rescue-candidate -- candidates/weekly-2026-07-17.md 42440276
 2. 不管这批新文献最后是通过预筛选、被预筛选剔除、还是 AI 打分完成，评估过的 PMID 都会写回这份记录
 
 也就是说"已处理"指的是"已经抓取并评估过"，不等于"已经采纳"——被预筛选剔除的文献也不会在下次检索同一时间窗口时被重复抓取和重复评估。
+
+### 曾经出现过的一个真实 bug：候选清单被覆盖
+
+早期版本里，候选清单的文件名只按日期命名（`weekly-2026-07-17.md`），且不管这次实际抓到几篇都会写文件。真实运行中遇到过这种情况：某次运行识别出 1 篇"新 PMID"，但这篇文献从 PubMed 抓取时没能拿到有效内容（大概率是刚发表、索引还没完全同步），最终这次运行得到 0 篇候选文献——但代码仍然按当天日期生成了一份"候选文献数：0"的文件，**直接覆盖掉了同一天早些时候那份真实包含 40 篇候选文献的清单**，而且当时还没来得及运行 `collect-kept` 生成"已保留"清单备份，导致这批文献的详细信息（标题、摘要、AI 打分、风险标记等）在本地丢失了。
+
+修复了两处：
+
+1. 抓取后如果一篇都没拿到有效内容，直接跳过（不写任何候选清单文件），只把这批 PMID 记入已处理记录，避免下次重复浪费请求去抓这个大概率抓不到内容的 PMID
+2. 候选清单文件名从"只到日期"改成"精确到秒的完整时间戳"（比如 `weekly-2026-07-17T10-07-32-288Z.md`），这样同一天运行多次也不会互相覆盖
+
+### 如果候选清单文件意外丢失/被覆盖，怎么恢复
+
+只要 `data/processed-pmids.json` 里还留着这批文献的 PMID 记录（这份记录不会因为候选清单文件丢失而受影响），就可以重新抓取 + 重新预筛选 + 重新 AI 打分，等效重建出一份候选清单：
+
+```bash
+npm run rebuild-from-processed
+```
+
+会读取 `processed-pmids.json` 里当前所有的 PMID，重新走一遍完整流程，生成 `candidates/rebuilt-<时间戳>.md`。注意 AI 打分可能因为模型的非确定性，跟原来的分数有细微出入，但文献内容和数量应该是一致的。
 
 ## AI 辅助打分与风险标记
 

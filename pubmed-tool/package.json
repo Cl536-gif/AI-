@@ -12,7 +12,8 @@
     "weekly-update": "node src/weeklyUpdate.js",
     "mark-kept": "node src/markKept.js",
     "collect-kept": "node src/collectKept.js",
-    "rescue-candidate": "node src/rescueCandidate.js"
+    "rescue-candidate": "node src/rescueCandidate.js",
+    "rebuild-from-processed": "node src/rebuildFromProcessed.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

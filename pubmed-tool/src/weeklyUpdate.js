@@ -71,6 +71,17 @@ async function main() {
   const articles = await pubmedClient.fetchArticles(newPmids);
   console.log(`抓取完成，共 ${articles.length} 篇。`);
 
+  if (articles.length === 0) {
+    // esearch 找到了 PMID，但 efetch 没能返回有效内容（比如刚发表、索引还没同步完）。
+    // 标记为已处理，避免每次都重新尝试这批抓不到内容的 PMID；不生成候选清单文件，
+    // 因为没有任何内容可以展示——绝不能在这种情况下用空结果覆盖掉已有的候选清单。
+    newPmids.forEach((id) => processedPmids.add(id));
+    saveProcessedPmids(processedPmids);
+    console.log('\n这批新 PMID 都没能成功抓到内容，跳过本次候选清单生成，无需人工介入。');
+    appendRunLog(`检索最近 ${days} 天 | 抓到 ${foundPmids.length} 篇 | 新文献 ${newPmids.length} 篇 | 抓取后均无有效内容，未生成候选清单`);
+    return;
+  }
+
   const { kept, rejected } = prefilterArticles(articles);
   console.log(`预筛选：保留 ${kept.length} 篇，剔除 ${rejected.length} 篇。`);
 
@@ -95,7 +106,9 @@ async function main() {
   });
 
   fs.mkdirSync(config.outputDir, { recursive: true });
-  const fileName = `weekly-${generatedAt.slice(0, 10)}.md`;
+  // 用完整时间戳（精确到秒）而不是只到日期，避免同一天多次运行时后一次把前一次的候选清单覆盖掉
+  const timestamp = generatedAt.replace(/[:.]/g, '-');
+  const fileName = `weekly-${timestamp}.md`;
   const filePath = path.join(config.outputDir, fileName);
   fs.writeFileSync(filePath, markdown, 'utf-8');
 
