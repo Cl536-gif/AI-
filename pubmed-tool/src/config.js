@@ -7,6 +7,11 @@ const DEFAULT_KEYWORDS = [
   'regional fat loss exercise',
   'BMI body composition young adults',
   'disordered eating prevention diet coaching',
+  'normal-weight obesity',
+  'hidden obesity',
+  'female weight management',
+  'diet',
+  'eating behavior',
 ];
 
 function parseKeywords() {
@@ -27,4 +32,14 @@ module.exports = {
   minYear: Number(process.env.PUBMED_MIN_YEAR) || CURRENT_YEAR - (Number(process.env.PUBMED_MAX_AGE_YEARS) || 15),
   minAbstractLength: Number(process.env.PUBMED_MIN_ABSTRACT_LENGTH) || 200,
   outputDir: process.env.PUBMED_OUTPUT_DIR || 'candidates',
+
+  // 每周增量更新
+  weeklyDays: Number(process.env.PUBMED_WEEKLY_DAYS) || 7,
+  processedStoreFile: process.env.PUBMED_PROCESSED_STORE || 'data/processed-pmids.json',
+
+  // AI 辅助打分（阿里云百炼通用模型接口，不是 backend/ 里那个绑定了人设知识库的应用）
+  bailianApiKey: process.env.BAILIAN_API_KEY || '',
+  bailianBaseUrl: process.env.BAILIAN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  bailianModel: process.env.BAILIAN_MODEL || 'qwen-plus',
+  aiScorerDelayMs: Number(process.env.AI_SCORER_DELAY_MS) || 300,
 };

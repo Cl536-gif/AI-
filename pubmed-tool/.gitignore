@@ -5,3 +5,9 @@ npm-debug.log*
 # 每次抓取生成的候选清单/已保留清单，属于运行输出，不提交
 candidates/*.md
 !candidates/.gitkeep
+
+# 已处理 PMID 记录，本地增量状态，不提交
+data/
+
+# cron 定时任务的运行日志
+logs/

@@ -33,14 +33,22 @@ async function eutilsRequest(endpoint, params) {
   return response;
 }
 
-/** 用一个关键词检索，返回匹配到的 PMID 列表 */
-async function searchPmids(keyword) {
+/**
+ * 用一个关键词检索，返回匹配到的 PMID 列表。
+ * 传 days 时只检索最近 N 天内新发表的文献（用于每周增量更新）。
+ */
+async function searchPmids(keyword, { days } = {}) {
   const params = buildCommonParams();
   params.set('db', 'pubmed');
   params.set('term', keyword);
   params.set('retmax', String(config.resultsPerKeyword));
   params.set('retmode', 'json');
   params.set('sort', 'pub+date');
+
+  if (days) {
+    params.set('datetype', 'pdat');
+    params.set('reldate', String(days));
+  }
 
   const response = await eutilsRequest('esearch.fcgi', params);
   const data = await response.json();

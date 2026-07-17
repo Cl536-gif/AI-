@@ -1,23 +1,39 @@
+function formatRiskFlags(riskFlags) {
+  if (!riskFlags || riskFlags.length === 0) return '';
+  return riskFlags.join('、');
+}
+
 function formatArticleBlock(article, index) {
   const authors = (article.authors || []).join(', ') || '（未知）';
   const abstract = (article.abstract || '（无摘要）').trim();
+  const hasAiScore = article.aiScore !== undefined && article.aiScore !== null;
+  const hasRiskFlags = article.riskFlags && article.riskFlags.length > 0;
 
-  return [
-    `## ${index}. ${article.title || '（无标题）'}`,
-    '',
+  const lines = [`## ${index}. ${article.title || '（无标题）'}`, ''];
+
+  if (hasRiskFlags) {
+    lines.push(`⚠️ 需要人工重点复核（${formatRiskFlags(article.riskFlags)}）`, '');
+  }
+
+  lines.push(
     '- [ ] 保留',
     `- PMID: ${article.pmid}`,
     `- 期刊：${article.journal || '（未知）'}`,
     `- 年份：${article.year || '（未知）'}`,
     `- 作者：${authors}`,
-    `- 链接：${article.url}`,
-    '',
-    '摘要：',
-    abstract,
-    '',
-    '---',
-    '',
-  ].join('\n');
+    `- 链接：${article.url}`
+  );
+
+  if (hasAiScore) {
+    lines.push(`- AI 相关性打分：${article.aiScore}/5`);
+  }
+  if (hasRiskFlags) {
+    lines.push(`- 风险标记：${formatRiskFlags(article.riskFlags)}`);
+  }
+
+  lines.push('', '摘要：', abstract, '', '---', '');
+
+  return lines.join('\n');
 }
 
 function formatRejectedLine(article) {
@@ -62,6 +78,8 @@ const FIELD_REGEXES = {
   year: /- 年份：(\S+)/,
   authors: /- 作者：(.*)/,
   url: /- 链接：(\S+)/,
+  aiScore: /- AI 相关性打分：(\S+)\/5/,
+  riskFlags: /- 风险标记：(.*)/,
   title: /^##\s*\d+\.\s*(.*)$/m,
 };
 
@@ -85,6 +103,8 @@ function parseArticleBlock(block) {
     year: get('year'),
     authors: get('authors'),
     url: get('url'),
+    aiScore: get('aiScore'),
+    riskFlags: get('riskFlags'),
     abstract: abstractMatch ? abstractMatch[1].trim() : '',
   };
 }
@@ -118,6 +138,12 @@ function renderKeptMarkdown(keptArticles, generatedAt) {
     lines.push(`- 年份：${article.year}`);
     lines.push(`- 作者：${article.authors}`);
     lines.push(`- 链接：${article.url}`);
+    if (article.aiScore) {
+      lines.push(`- AI 相关性打分：${article.aiScore}/5`);
+    }
+    if (article.riskFlags) {
+      lines.push(`- 风险标记：${article.riskFlags}`);
+    }
     lines.push('');
     lines.push('摘要：');
     lines.push(article.abstract);

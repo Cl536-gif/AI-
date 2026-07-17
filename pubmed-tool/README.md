@@ -1,28 +1,39 @@
 # PubMed 文献自动抓取与预筛选工具
 
-对应《PubMed 文献自动抓取与预筛选工具·需求文档》核心功能清单的第一到第四部分（第五部分"定时自动运行"暂不实现，先做成手动触发脚本）：
+这个文件夹对应两份需求文档，是先后两次迭代：
 
-- [x] 1. 关键词检索 —— 默认 6 个关键词，可在 `.env` 里覆盖
+**《PubMed 文献自动抓取与预筛选工具·需求文档》**（第一到第四部分，第五部分"定时自动运行"当时先不做）：
+
+- [x] 1. 关键词检索 —— 默认关键词列表，可在 `.env` 里覆盖
 - [x] 2. 调用 PubMed 官方 E-utilities 抓取标题/摘要/作者/期刊/年份/PMID/链接
 - [x] 3. 自动预筛选（动物实验、发表过早、摘要过短、疑似纯药物/手术类研究）
 - [x] 4. 候选清单展示与人工确认（Markdown 文件 + 复选框）
-- [ ] 5. 定时自动运行 —— 未实现，仍是手动运行 `npm run fetch-pubmed`
 
-**红线（按需求文档，不因效率考虑而改变）**：不抓取需要订阅权限的全文，只用公开的标题+摘要；不自动把抓到的内容写入知识库文档——"候选清单生成"是自动的，但"最终决定保留哪些文献"必须人工勾选确认，写进知识库前仍需人工提炼改写，不直接照搬摘要原文。
+**《身材管理专项知识库·每周自动更新工具需求文档》**（在上面的基础上扩展）：
+
+- [x] 1. 增量比对逻辑 —— 记录已处理过的 PMID，避免重复抓取
+- [x] 2. AI 辅助相关性打分与风险标记
+- [x] 3. cron 定时任务设置说明（见文末）
+
+**红线（按两份需求文档，不因效率/自动化程度提升而改变）**：不抓取需要订阅权限的全文，只用公开的标题+摘要；不自动把抓到的内容写入知识库文档——"候选清单生成"（含检索、抓取、预筛选、AI 打分排序）可以自动跑，但"最终决定保留哪些文献"必须人工勾选确认，写进知识库前仍需人工提炼改写，不直接照搬摘要原文；AI 的打分和风险标记仅供参考，不作为自动采纳或自动排除的依据。
 
 ## 目录结构
 
 ```
 pubmed-tool/
 ├── src/
-│   ├── config.js           # 读取环境变量：关键词、限速、预筛选阈值等
-│   ├── pubmedClient.js      # 封装 NCBI E-utilities：esearch（检索）+ efetch（抓取）+ XML 解析
+│   ├── config.js           # 读取环境变量：关键词、限速、预筛选阈值、AI 打分配置等
+│   ├── pubmedClient.js      # 封装 NCBI E-utilities：esearch（检索，支持按天数限定范围）+ efetch（抓取）+ XML 解析
 │   ├── prefilter.js         # 自动预筛选规则
-│   ├── candidateList.js     # 生成候选清单 Markdown / 解析人工勾选结果
-│   ├── fetchPubmed.js       # npm run fetch-pubmed 的入口
+│   ├── processedStore.js    # 已处理 PMID 记录的读写（增量比对用）
+│   ├── aiScorer.js          # 调用阿里云百炼给文献打相关性分数 + 风险标记
+│   ├── candidateList.js     # 生成候选清单 Markdown（含 AI 打分/风险标记）/ 解析人工勾选结果
+│   ├── fetchPubmed.js       # npm run fetch-pubmed 的入口（手动、一次性抓取，不做增量/AI打分）
+│   ├── weeklyUpdate.js      # npm run weekly-update 的入口（增量抓取 + AI 打分排序，可配 cron 定时跑）
 │   ├── markKept.js          # npm run mark-kept 的入口（可选的批量勾选方式）
 │   └── collectKept.js       # npm run collect-kept 的入口
 ├── candidates/               # 生成的候选清单 / 已保留清单（已 gitignore，只保留 .gitkeep）
+├── data/                      # 已处理 PMID 记录（已 gitignore，运行 weekly-update 后自动生成）
 ├── .env.example
 └── package.json
 ```
@@ -55,6 +66,25 @@ npm run collect-kept -- candidates/candidates-2026-07-17.md
 
 会在同一个目录生成 `kept-<日期>.md`，是一份干净的"已保留"清单，供你后续人工提炼总结、整理进知识库文档。
 
+## 每周增量更新（`weekly-update`）
+
+跟上面手动的 `fetch-pubmed` 不同，`weekly-update` 专门用来做"定期检查有没有新文献"这件事：只检索最近 N 天新发表的文献、自动跳过已经处理过的 PMID、用 AI 给通过预筛选的文献打相关性分数和风险标记，最后生成一份按分数从高到低排好序的候选清单。
+
+```bash
+npm run weekly-update              # 默认检索最近 7 天
+npm run weekly-update -- --days 14 # 自定义天数
+```
+
+第一次配置前，还需要在 `.env` 里填 `BAILIAN_API_KEY`（AI 打分要用，见下面"AI 辅助打分"一节的说明）。
+
+运行时的日志会依次显示：本次抓到多少篇（去重后）、跟已处理记录比对后剩多少篇新文献、预筛选剔除多少篇、AI 打分处理了多少篇（以及其中多少篇带风险标记）、最终候选清单包含多少篇。
+
+**如果这次检索范围内没有新文献**（比对已处理记录后一篇不剩），脚本会打印"本次无新文献"直接结束，不会生成候选清单文件，也不需要你做任何事——这种情况是完全自动、不需要人工介入的，只有真正抓到新文献时才会生成候选清单等你确认。
+
+生成的候选清单文件名是 `weekly-<日期>.md`（区别于 `fetch-pubmed` 生成的 `candidates-<日期>.md`，避免同一天两个命令都跑了互相覆盖），后续勾选、`mark-kept`、`collect-kept` 的用法跟前面完全一样。
+
+已处理过的 PMID 记录在 `data/processed-pmids.json`（不管这篇文献最后是保留还是被预筛选剔除，只要抓取评估过就会记进去，下次不会再重复抓取）。这个文件不提交到 git，删掉它相当于"重置记忆"，下次运行会把检索范围内的所有文献都当成新的重新处理一遍。
+
 ## 配置项（可选，复制 `.env.example` 为 `.env` 后修改）
 
 | 变量名 | 默认值 | 说明 |
@@ -67,6 +97,12 @@ npm run collect-kept -- candidates/candidates-2026-07-17.md
 | `PUBMED_MAX_AGE_YEARS` | `15` | 没填 `PUBMED_MIN_YEAR` 时，用这个值算最早年份 |
 | `PUBMED_MIN_ABSTRACT_LENGTH` | `200` | 摘要字符数低于这个值会被预筛选掉 |
 | `PUBMED_OUTPUT_DIR` | `./candidates` | 候选清单 / 已保留清单的输出目录 |
+| `PUBMED_WEEKLY_DAYS` | `7` | `weekly-update` 默认检索最近多少天的新文献，`--days` 参数可临时覆盖 |
+| `PUBMED_PROCESSED_STORE` | `data/processed-pmids.json` | 已处理 PMID 记录的存储路径 |
+| `BAILIAN_API_KEY` | 无（必填才能用 AI 打分） | 阿里云百炼 API Key，用于 AI 辅助打分；和 `backend/.env` 是两份独立配置，同一账号可以复用同一个值 |
+| `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容模式的地址 |
+| `BAILIAN_MODEL` | `qwen-plus` | AI 打分调用的模型 |
+| `AI_SCORER_DELAY_MS` | `300` | 每篇文献打分之间的等待时间（毫秒） |
 
 ### 默认关键词列表
 
@@ -77,9 +113,16 @@ spot reduction adipose tissue
 regional fat loss exercise
 BMI body composition young adults
 disordered eating prevention diet coaching
+normal-weight obesity
+hidden obesity
+female weight management
+diet
+eating behavior
 ```
 
-需求文档原本给的"spot reduction myth / localized fat loss"这个关键词实测在 PubMed 检索不到任何文献（措辞偏口语化，跟论文标题摘要常用的学术用词对不上）。换成了 `spot reduction adipose tissue` 和 `regional fat loss exercise` 两个更学术化的说法，覆盖"局部减脂"这个方向。
+前 6 个是最初就有的（需求文档原本给的"spot reduction myth / localized fat loss"这个关键词实测在 PubMed 检索不到任何文献，措辞偏口语化，换成了 `spot reduction adipose tissue` 和 `regional fat loss exercise` 两个更学术化的说法）。后 5 个是《每周自动更新工具需求文档》里补充的。
+
+需要提醒一点：`diet` 这个词单独作为关键词非常宽泛，几乎能匹配任何提到"饮食"的论文（糖尿病饮食、临床营养干预等各种不相关方向都会混进来），预筛选规则能挡掉一部分明显不相关的（动物实验、纯药物研究等），但挡不住"话题沾边但跟产品方向关系不大"的文献。如果实际跑起来发现这个关键词贡献的候选质量偏低、噪音偏多，可以把它从关键词列表里去掉，或者换成更具体的搭配（比如 `diet behavior female college students`）。
 
 ## 预筛选规则
 
@@ -91,6 +134,30 @@ disordered eating prevention diet coaching
 4. 标题或摘要包含疑似纯药物/临床手术类关键词：`surgery / surgical / pharmacological / pharmacology / drug therapy / chemotherapy`
 
 被剔除的文献不会从清单里完全消失——候选清单文件末尾有一个"预筛选剔除清单"，列出每篇被剔除的文献和具体原因，方便人工核查筛选规则本身有没有问题（比如把真正相关的文献误判成了动物实验）。
+
+## 增量比对（避免重复抓取）
+
+`weekly-update` 每次运行都会：
+
+1. 检索最近 N 天内的文献，跟 `data/processed-pmids.json` 里已经记录过的 PMID 比对，只保留真正的新文献往下走
+2. 不管这批新文献最后是通过预筛选、被预筛选剔除、还是 AI 打分完成，评估过的 PMID 都会写回这份记录
+
+也就是说"已处理"指的是"已经抓取并评估过"，不等于"已经采纳"——被预筛选剔除的文献也不会在下次检索同一时间窗口时被重复抓取和重复评估。
+
+## AI 辅助打分与风险标记
+
+对每篇通过预筛选的新文献，`aiScorer.js` 会调用阿里云百炼的通用模型接口（`qwen-plus`，走 OpenAI 兼容模式，不是 `backend/` 项目里那个绑定了知识库人设的应用），请它输出：
+
+- **相关性打分**（1-5 分）：跟"女大学生饮食/体重体脂管理"这个产品方向的贴合程度，候选清单按这个分数从高到低排序
+- **风险标记**（可能多个，也可能没有）：
+  - `涉及具体剂量/药物`
+  - `局部减脂类争议话题`
+  - `极端饮食方法`
+  - `特定病理人群`
+
+带风险标记的文献，在候选清单里会有醒目的 `⚠️ 需要人工重点复核` 提示，但**不会被自动过滤掉**，仍然正常出现在清单里，风险标记只是提醒你审阅时多留意，最终保留/丢弃完全由人工判断。
+
+单篇打分失败（网络问题、模型返回格式不对等）不会导致整批处理中断——失败的那篇会正常出现在候选清单里，只是没有 AI 打分和风险标记，等同于"这篇需要你自己判断，AI 没能提供参考意见"。
 
 ## 验证情况
 
@@ -104,6 +171,86 @@ disordered eating prevention diet coaching
 
 后来在实际本地环境（真实调用 NCBI 接口）跑通了完整流程：6 个关键词共检索到 82 篇文献，预筛选保留 67 篇、剔除 15 篇，候选清单正常生成。跑的过程中发现并修复了一个真实问题：部分文献的标题/摘要/期刊/作者名里，重音字母和数学符号（如 `è`、`≥`）不是标准 XML 转义，而是以 HTML 数字实体的字面文本形式存在（`&#xe9;`、`&#x2265;` 这种），XML 解析库不会自动处理这种情况，导致清单里原样显示这些代码。`pubmedClient.js` 的 `textOf()` 现在会对提取出的每个字段统一做一次实体解码（数字实体 + `&amp; &lt; &gt; &quot; &apos; &nbsp;` 这几个常见命名实体），修复后特殊字符能正常显示。
 
-## 后续（第五部分，暂不做）
+### 增量更新 + AI 打分部分的验证情况
 
-定时自动运行（比如每天/每周自动跑一次 `fetch-pubmed`），等你需要的时候再说，可以用系统的 `cron` 或者其他任务调度工具，不需要额外改代码逻辑。
+同样受限于开发环境连不上 NCBI 和阿里云百炼，真实的 `weekly-update` 端到端调用没法在开发环境里跑，但用构造数据完整验证过组合起来的逻辑是对的：
+
+- **增量比对**：模拟"上次已处理过 PMID 1、2，这次检索到 1/2/3/4/5"，能正确识别出 3、4、5 才是新文献
+- **预筛选 + AI 打分排序**：模拟一批新文献，含动物实验、极端饮食话题等场景，验证预筛选正确剔除动物实验文献，AI 打分（模拟返回值）驱动候选清单按分数从高到低排序
+- **风险标记不过滤**：命中风险标记（比如"极端饮食方法"）的文献会带 `⚠️` 醒目提示，但仍然正常出现在候选清单里，不会被自动剔除
+- **增量存储更新**：一轮处理完成后，无论保留还是剔除，涉及的 PMID 都正确写回 `processed-pmids.json`，下次同样的检索范围不会重复抓取
+- **"本次无新文献"安静退出**：模拟所有检索结果都已在处理记录里的情况，确认脚本会打印提示并直接结束，不生成候选清单文件
+- `aiScorer.js` 的响应解析（`parseScoreResponse`）单独测试过：能正确处理干净的 JSON、包在 markdown 代码块里的 JSON、模型编造的风险标记会被过滤掉、分数超出 1-5 范围或返回内容根本不是 JSON 时都能正确抛出可读的错误信息
+
+真实调用阿里云百炼的部分（提示词效果怎么样、qwen-plus 打分是否准确、真实网络环境下的报错情况）需要你在本地配好 `BAILIAN_API_KEY` 后实际跑一遍验证。
+
+## 定时自动运行（cron）
+
+`weekly-update` 本身只是一个手动运行的命令，"每周自动触发"需要借助系统自带的 `cron`（Mac / Linux 都有，操作完全一样）来定时执行它。以下是具体设置步骤。
+
+### 第一步：确认 node 的完整路径
+
+cron 运行时用的是一个非常精简的环境变量，通常找不到你终端里能直接用的 `node` 命令，需要用完整路径：
+
+```bash
+which node
+```
+
+记下这个路径（比如 `/usr/local/bin/node` 或 `/opt/homebrew/bin/node`），下面会用到。
+
+### 第二步：建一个日志目录
+
+```bash
+cd pubmed-tool
+mkdir -p logs
+```
+
+### 第三步：编辑 crontab
+
+```bash
+crontab -e
+```
+
+会打开一个编辑器（默认可能是 vim；不熟悉的话可以先执行 `export EDITOR=nano` 再执行上面这条，改用更好操作的 nano）。加入这一行（把路径换成你自己的实际路径）：
+
+```
+0 3 * * 1 cd /Users/你的用户名/Desktop/AI-试2/pubmed-tool && /usr/local/bin/node src/weeklyUpdate.js >> logs/weekly-update.log 2>&1
+```
+
+这一行的意思是：**每周一凌晨 3 点**，自动进入 `pubmed-tool` 目录运行 `weekly-update`，把输出（包括报错）追加写进 `logs/weekly-update.log`。
+
+cron 的时间格式是 `分 时 日 月 星期`，`0 3 * * 1` = 每周一 03:00。想改成每天就用 `0 3 * * *`；想改成每周日，把最后的 `1` 换成 `0`。
+
+保存退出编辑器：vim 是按 `Esc` 然后输入 `:wq` 回车；nano 是 `Ctrl+O` 保存、`Ctrl+X` 退出。
+
+### 第四步：确认定时任务已生效
+
+```bash
+crontab -l
+```
+
+能看到你刚才加的那一行，就说明设置成功了。
+
+### 第五步：查看历史运行日志
+
+```bash
+tail -50 pubmed-tool/logs/weekly-update.log
+```
+
+每次 cron 触发运行的完整输出（包括"本次抓到多少篇""本次无新文献"这些日志）都会追加在这个文件里，用来确认有没有正常运行、有没有报错。
+
+### macOS 需要注意的一点
+
+macOS（Catalina 及更新版本）出于隐私保护，`cron` 默认可能没有权限访问你的文件（尤其是 `~/Desktop` 里的文件）。如果到了设定时间却完全没有生成日志、或者日志里有权限相关的报错，去**系统设置 → 隐私与安全性 → 完全磁盘访问权限**，把 `/usr/sbin/cron` 加进去并打开开关。
+
+### 想先手动测试一下 cron 这一行本身对不对
+
+不用等到真正到点，直接把 crontab 里那一整行 `cd ... && /usr/local/bin/node ...` 复制到终端手动跑一次，确认没有报错、日志文件正常写入，再放心交给 cron 定时执行。
+
+### 想停止定时任务
+
+```bash
+crontab -e
+```
+
+把对应那一行删掉（或者在行首加 `#` 注释掉），保存退出即可。
