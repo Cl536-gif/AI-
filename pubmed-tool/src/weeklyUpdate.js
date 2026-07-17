@@ -7,6 +7,7 @@ const { prefilterArticles } = require('./prefilter');
 const { scoreArticles } = require('./aiScorer');
 const { renderCandidateMarkdown } = require('./candidateList');
 const { loadProcessedPmids, saveProcessedPmids } = require('./processedStore');
+const { appendRunLog } = require('./runLog');
 
 function parseDaysArg(argv) {
   const idx = argv.indexOf('--days');
@@ -62,6 +63,7 @@ async function main() {
 
   if (newPmids.length === 0) {
     console.log('\n本次无新文献，结束运行，不生成候选清单，无需人工介入。');
+    appendRunLog(`检索最近 ${days} 天 | 抓到 ${foundPmids.length} 篇 | 本次无新文献`);
     return;
   }
 
@@ -105,9 +107,16 @@ async function main() {
   console.log(`\n最终候选清单包含 ${sorted.length} 篇，已生成: ${filePath}`);
   console.log('打开这份文件，重点看带 ⚠️ 标记的条目，把想保留的文献前面的 [ ] 改成 [x]，改完运行：');
   console.log(`  npm run collect-kept -- ${filePath}`);
+
+  appendRunLog(
+    `检索最近 ${days} 天 | 抓到 ${foundPmids.length} 篇 | 新文献 ${newPmids.length} 篇 | ` +
+      `预筛选保留 ${kept.length} 剔除 ${rejected.length} | AI 打分完成（${flaggedCount} 篇风险标记）| ` +
+      `候选清单: ${filePath}`
+  );
 }
 
 main().catch((err) => {
   console.error('每周增量更新失败:', err);
+  appendRunLog(`运行失败: ${err.message}`);
   process.exitCode = 1;
 });

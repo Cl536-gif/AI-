@@ -11,7 +11,8 @@
     "fetch-pubmed": "node src/fetchPubmed.js",
     "weekly-update": "node src/weeklyUpdate.js",
     "mark-kept": "node src/markKept.js",
-    "collect-kept": "node src/collectKept.js"
+    "collect-kept": "node src/collectKept.js",
+    "rescue-candidate": "node src/rescueCandidate.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

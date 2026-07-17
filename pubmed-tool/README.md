@@ -30,10 +30,14 @@ pubmed-tool/
 │   ├── candidateList.js     # 生成候选清单 Markdown（含 AI 打分/风险标记）/ 解析人工勾选结果
 │   ├── fetchPubmed.js       # npm run fetch-pubmed 的入口（手动、一次性抓取，不做增量/AI打分）
 │   ├── weeklyUpdate.js      # npm run weekly-update 的入口（增量抓取 + AI 打分排序，可配 cron 定时跑）
+│   ├── runLog.js            # 每次 weekly-update 运行都往 logs/weekly-update.log 追加一条记录
+│   ├── rescueCandidate.js   # npm run rescue-candidate 的入口（把被预筛选误判排除的文献手动加回候选清单）
 │   ├── markKept.js          # npm run mark-kept 的入口（可选的批量勾选方式）
 │   └── collectKept.js       # npm run collect-kept 的入口
 ├── candidates/               # 生成的候选清单 / 已保留清单（已 gitignore，只保留 .gitkeep）
 ├── data/                      # 已处理 PMID 记录（已 gitignore，运行 weekly-update 后自动生成）
+├── logs/                      # weekly-update 每次运行的记录（已 gitignore，自动生成）
+├── false-positive-log.md      # 预筛选误判案例记录（会提交到仓库，持续积累）
 ├── .env.example
 └── package.json
 ```
@@ -137,6 +141,22 @@ eating behavior
 
 **动物实验关键词列表的一点权衡**：最初只有 `mice/rat/rodent` 几个词，实测发现漏掉了火鸡、蜜蜂、蟋蟀、猫、猪、罗非鱼这些真实出现过的研究动物，扩充列表补上了这些。但这类词天生存在误伤风险——比如"蟋蟀粉作为人类膳食蛋白来源"这种其实跟产品方向相关的论文，会因为标题里出现"cricket"被误判成动物实验剔除掉；"鸡肉""鱼""牛"这些词在人类饮食摄入类研究里也很常见（"参与者摄入鸡胸肉"之类的表述）。这个关键词列表天然是"宁可错杀、不追求完美"的粗筛，被误伤的文献仍然会带着剔除原因出现在"预筛选剔除清单"里，供人工核查发现有没有筛选过严；真正更彻底的解决方案是解析 PubMed 返回的 MeSH 主题词（比如同时标了 `Animals` 但没标 `Humans` 的记录基本可以确认是动物实验），比关键词猜测更准确，但目前 `pubmedClient.js` 还没有解析这部分数据，算是一个可以考虑的后续改进方向。
 
+预筛选规则不止会误伤动物实验相关的判断——"疑似纯药物/临床手术类研究"这条也有同样的通病：关键词匹配分不清"这篇论文提到手术是因为它本身讲手术"和"这篇论文提到手术只是为了说明它把手术类研究排除在外了"。真实遇到过的例子是一篇讲"长期禁食对身体成分影响"的系统综述，因为摘要里大概率有一句"排除了涉及药物或手术干预的研究"（描述它自己的筛选标准），被误判成手术类研究整篇排除掉了。
+
+## 预筛选误判的记录与手动找回
+
+发现类似"明显应该保留、却被预筛选误判排除"的情况，先不急着改预筛选规则本身（这类问题往往靠关键词很难根治，改动收益和复杂度需要权衡），而是：
+
+1. 把这篇文献手动加回对应的候选清单：
+
+```bash
+npm run rescue-candidate -- candidates/weekly-2026-07-17.md 42440276
+```
+
+这条命令会用真实 PMID 重新从 PubMed 抓一遍这篇文献的完整信息，接在候选清单主列表末尾（带 `[ ] 保留` 复选框和"人工手动加回"的备注），不影响清单里其他条目。
+
+2. 在 `false-positive-log.md`（提交到仓库里，持续积累）里记一条案例：文献信息 + 命中的规则 + 推测原因。等积累到 3-5 条同类案例后，再回头一起判断要不要真正调整预筛选逻辑。
+
 ## AI 打分驱动的"低相关性"分组
 
 `weekly-update` 生成的候选清单里，AI 打分为 **1 分**（"基本不相关"）的文献，不会跟其他候选文献混在主列表里，而是自动挪到清单末尾的"低相关性文献"分组，减少你翻阅主列表时的干扰。这些文献仍然带着完整的复选框和详细信息，如果你不同意 AI 的判断，一样可以勾选保留——AI 打分只影响"展示顺序/分组"，不影响"能不能被保留"这个最终决定权。
@@ -197,6 +217,24 @@ eating behavior
 1. 扩充了 `prefilter.js` 的动物实验关键词列表
 2. `candidateList.js` 新增了"低相关性文献"分组——AI 打分 1 分的文献自动挪到候选清单末尾单独分组，减少人工翻阅主列表的干扰，但仍保留复选框，不影响人工最终决定权
 
+## 运行日志（不管手动运行还是 cron 触发都会记）
+
+`weeklyUpdate.js` 每次运行结束（不管是抓到新文献生成了候选清单、判断"本次无新文献"、还是中途报错），都会往 `logs/weekly-update.log` 追加一行带时间戳的记录，不需要额外配置，手动运行和 cron 定时触发都一样会记：
+
+```bash
+cat pubmed-tool/logs/weekly-update.log
+```
+
+内容大概长这样：
+
+```
+[2026-07-17T03:00:12.481Z] 检索最近 7 天 | 抓到 5 篇 | 本次无新文献
+[2026-07-24T03:00:15.223Z] 检索最近 7 天 | 抓到 12 篇 | 新文献 8 篇 | 预筛选保留 6 剔除 2 | AI 打分完成（2 篇风险标记）| 候选清单: candidates/weekly-2026-07-24.md
+[2026-07-31T03:00:08.007Z] 运行失败: PubMed esearch.fcgi 请求失败: HTTP 403
+```
+
+看最后一行的时间戳，就知道上次是什么时候跑的；看内容就知道跑成功了还是失败了、有没有生成新的候选清单。这个文件不提交到仓库（本地运行状态），删掉相当于清空历史记录，不影响下次继续正常运行。
+
 ## 定时自动运行（cron）
 
 `weekly-update` 本身只是一个手动运行的命令，"每周自动触发"需要借助系统自带的 `cron`（Mac / Linux 都有，操作完全一样）来定时执行它。以下是具体设置步骤。
@@ -211,14 +249,7 @@ which node
 
 记下这个路径（比如 `/usr/local/bin/node` 或 `/opt/homebrew/bin/node`），下面会用到。
 
-### 第二步：建一个日志目录
-
-```bash
-cd pubmed-tool
-mkdir -p logs
-```
-
-### 第三步：编辑 crontab
+### 第二步：编辑 crontab
 
 ```bash
 crontab -e
@@ -227,30 +258,22 @@ crontab -e
 会打开一个编辑器（默认可能是 vim；不熟悉的话可以先执行 `export EDITOR=nano` 再执行上面这条，改用更好操作的 nano）。加入这一行（把路径换成你自己的实际路径）：
 
 ```
-0 3 * * 1 cd /Users/你的用户名/Desktop/AI-试2/pubmed-tool && /usr/local/bin/node src/weeklyUpdate.js >> logs/weekly-update.log 2>&1
+0 3 * * 1 cd /Users/你的用户名/Desktop/AI-试2/pubmed-tool && /usr/local/bin/node src/weeklyUpdate.js >> logs/cron-raw.log 2>&1
 ```
 
-这一行的意思是：**每周一凌晨 3 点**，自动进入 `pubmed-tool` 目录运行 `weekly-update`，把输出（包括报错）追加写进 `logs/weekly-update.log`。
+这一行的意思是：**每周一凌晨 3 点**，自动进入 `pubmed-tool` 目录运行 `weekly-update`。末尾 `>> logs/cron-raw.log 2>&1` 是个额外的保险——把完整的控制台输出也存一份原始记录，用于万一脚本自身的日志没能正常写入时的兜底排查（比如 node 本身启动失败这种脚本代码管不到的极端情况），日常查看运行状态用上面的 `logs/weekly-update.log` 就够了，不需要看这份原始记录。
 
 cron 的时间格式是 `分 时 日 月 星期`，`0 3 * * 1` = 每周一 03:00。想改成每天就用 `0 3 * * *`；想改成每周日，把最后的 `1` 换成 `0`。
 
 保存退出编辑器：vim 是按 `Esc` 然后输入 `:wq` 回车；nano 是 `Ctrl+O` 保存、`Ctrl+X` 退出。
 
-### 第四步：确认定时任务已生效
+### 第三步：确认定时任务已生效
 
 ```bash
 crontab -l
 ```
 
 能看到你刚才加的那一行，就说明设置成功了。
-
-### 第五步：查看历史运行日志
-
-```bash
-tail -50 pubmed-tool/logs/weekly-update.log
-```
-
-每次 cron 触发运行的完整输出（包括"本次抓到多少篇""本次无新文献"这些日志）都会追加在这个文件里，用来确认有没有正常运行、有没有报错。
 
 ### macOS 需要注意的一点
 
