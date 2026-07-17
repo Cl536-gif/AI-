@@ -5,7 +5,12 @@ let extractorPromise = null;
 function getExtractor() {
   if (!extractorPromise) {
     extractorPromise = (async () => {
-      const { pipeline } = await import('@xenova/transformers');
+      const { pipeline, env } = await import('@xenova/transformers');
+      // huggingface.co 在国内经常连不上/超时，可以在 .env 里设置
+      // KB_HF_ENDPOINT=https://hf-mirror.com 切换成镜像站，URL 结构完全兼容
+      if (process.env.KB_HF_ENDPOINT) {
+        env.remoteHost = process.env.KB_HF_ENDPOINT;
+      }
       return pipeline('feature-extraction', MODEL_NAME);
     })();
   }

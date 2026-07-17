@@ -58,6 +58,27 @@ npm run query -- "怎么瘦肚子"
 | `KB_CHUNK_CHARS` | `500` | 每个片段的最大字符数（按段落切分，不会切碎单个段落，超长段落才会硬切） |
 | `KB_TOP_K` | `5` | 查询时返回的最相关片段数量 |
 | `KB_EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | 本地 embedding 模型，需是 transformers.js 支持的模型 |
+| `KB_HF_ENDPOINT` | `https://huggingface.co` | 下载 embedding 模型的地址，国内连不上/超时时改成 `https://hf-mirror.com`（URL 结构兼容，直接替换即可） |
+
+## 常见问题（国内网络环境）
+
+- **`npm install` 时 `sharp` 报错 "Request timed out"**：`sharp` 装依赖时要从 GitHub Releases 下载一个二进制文件，国内经常超时。换成镜像：
+  ```bash
+  export npm_config_sharp_binary_host="https://npmmirror.com/mirrors/sharp"
+  export npm_config_sharp_libvips_binary_host="https://npmmirror.com/mirrors/sharp-libvips"
+  npm install
+  ```
+  如果 `npm install` 提示 `allow-scripts` 相关警告导致脚本没真正执行，先批准再重新触发：
+  ```bash
+  npm approve-scripts sharp
+  npm rebuild sharp
+  ```
+
+- **`npm run build-index` 时报 `ConnectTimeoutError` / `fetch failed`**：说明连不上 huggingface.co 下载 embedding 模型（常见于国内网络，Node 的 `fetch` 不会自动走系统代理）。在 `.env` 里加一行换成镜像站：
+  ```
+  KB_HF_ENDPOINT=https://hf-mirror.com
+  ```
+  然后重新运行 `npm run build-index`。
 
 ## 已验证的部分
 
