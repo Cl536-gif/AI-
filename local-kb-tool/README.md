@@ -21,11 +21,11 @@ local-kb-tool/
 ├── kb-docs/                # 放你的 .docx 知识库文件（已 gitignore，不提交原文）
 │   ├── .gitkeep
 │   ├── diet/                # 多知识库时，每个知识库一个子目录（名字自定）
-│   └── posture/
+│   └── body-composition/
 ├── data/                    # 本地向量索引存储目录（运行 build-index 后自动生成，已 gitignore）
 │   └── index/
-│       ├── diet/             # 对应 kb-docs/diet/ 的索引
-│       └── posture/          # 对应 kb-docs/posture/ 的索引
+│       ├── diet/               # 对应 kb-docs/diet/ 的索引
+│       └── body-composition/   # 对应 kb-docs/body-composition/ 的索引
 ├── src/
 │   ├── docReader.js         # 读取 .docx，用 mammoth 提取纯文本
 │   ├── chunker.js           # 按段落切分成小片段
@@ -61,13 +61,13 @@ npm run query -- "怎么瘦肚子"
 给每个知识库起个名字，文档放进 `kb-docs/<名字>/`，建索引和查询时都带上 `--kb <名字>`，各知识库的索引完全独立存放，互不影响、查询也不会混在一起：
 
 ```bash
-# 把第一个知识库的 .docx 放进 kb-docs/diet/，第二个放进 kb-docs/posture/
+# 把第一个知识库的 .docx 放进 kb-docs/diet/，第二个放进 kb-docs/body-composition/
 
 npm run build-index -- --kb diet
-npm run build-index -- --kb posture
+npm run build-index -- --kb body-composition
 
 npm run query -- --kb diet "需要注册吗"
-npm run query -- --kb posture "含胸怎么办"
+npm run query -- --kb body-composition "微胖和瘦胖子怎么区分"
 ```
 
 已经在用单知识库（没传过 `--kb`）的现有索引不受影响，继续用 `npm run build-index` / `npm run query -- "问题"`（不加 `--kb`）就行，走的还是原来的 `kb-docs/`、`data/index/` 默认目录。
