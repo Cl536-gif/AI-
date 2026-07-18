@@ -14,9 +14,36 @@ const KEYWORD_WEIGHT = process.env.KB_KEYWORD_WEIGHT !== undefined
   ? Number(process.env.KB_KEYWORD_WEIGHT)
   : 0.35;
 
+/**
+ * 对单个知识库做一次混合检索，返回按 hybridScore 排好序的 top-K 片段。
+ * 抽成独立函数是为了让 backend 那条独立的本地知识库问答链路也能直接复用，
+ * 不用再维护第二份检索逻辑。
+ */
+async function retrieve(kbName, question) {
+  const { indexDir: INDEX_DIR } = resolveKbPaths(kbName);
+
+  const index = createStore(INDEX_DIR);
+  if (!(await index.isIndexCreated())) {
+    const err = new Error(`索引不存在（知识库: ${kbName || '默认'}），请先运行 npm run build-index${kbName ? ` -- --kb ${kbName}` : ''}（目录: ${INDEX_DIR}）`);
+    err.code = 'KB_INDEX_NOT_FOUND';
+    throw err;
+  }
+
+  const vector = await embedQuery(question);
+  const candidates = await queryTopK(index, vector, CANDIDATE_POOL);
+
+  return candidates
+    .map((r) => {
+      const keywordScore = keywordOverlapScore(question, r.text);
+      const hybridScore = (1 - KEYWORD_WEIGHT) * r.score + KEYWORD_WEIGHT * keywordScore;
+      return { ...r, semanticScore: r.score, keywordScore, hybridScore };
+    })
+    .sort((a, b) => b.hybridScore - a.hybridScore)
+    .slice(0, TOP_K);
+}
+
 async function main() {
   const { kbName, rest } = parseKbArg(process.argv.slice(2));
-  const { indexDir: INDEX_DIR } = resolveKbPaths(kbName);
   const question = rest.join(' ').trim();
 
   if (!question) {
@@ -25,24 +52,14 @@ async function main() {
     return;
   }
 
-  const index = createStore(INDEX_DIR);
-  if (!(await index.isIndexCreated())) {
-    console.error(`索引不存在（知识库: ${kbName || '默认'}），请先运行 npm run build-index${kbName ? ` -- --kb ${kbName}` : ''}（目录: ${INDEX_DIR}）`);
+  let results;
+  try {
+    results = await retrieve(kbName, question);
+  } catch (err) {
+    console.error(err.message);
     process.exitCode = 1;
     return;
   }
-
-  const vector = await embedQuery(question);
-  const candidates = await queryTopK(index, vector, CANDIDATE_POOL);
-
-  const results = candidates
-    .map((r) => {
-      const keywordScore = keywordOverlapScore(question, r.text);
-      const hybridScore = (1 - KEYWORD_WEIGHT) * r.score + KEYWORD_WEIGHT * keywordScore;
-      return { ...r, semanticScore: r.score, keywordScore, hybridScore };
-    })
-    .sort((a, b) => b.hybridScore - a.hybridScore)
-    .slice(0, TOP_K);
 
   console.log(`\n问题: ${question}\n`);
   if (results.length === 0) {
@@ -59,7 +76,11 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('查询失败:', err);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('查询失败:', err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { retrieve };

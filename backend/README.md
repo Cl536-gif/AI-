@@ -7,6 +7,7 @@
 - [x] 3. 密钥安全存储 —— 密钥只存在于服务端 `.env`，不出现在前端代码或提交到仓库
 - [x] 4. 简易用户身份 + "上次活跃时间"记录 —— `src/services/userStore.js`（SQLite）
 - [x] 5. 回复内容安全检查 —— `src/services/contentSafety.js`
+- [x] 6. 独立的本地知识库问答链路（对比测试用）—— `src/routes/chatLocal.js` + `src/services/localChatService.js`，跟第 2 条完全分开，互不影响
 
 ## 目录结构
 
@@ -15,14 +16,20 @@ backend/
 ├── public/                      # 前端：聊天页面（静态文件，由 Express 直接托管）
 │   ├── index.html
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   └── compare.html              # 独立的对比测试页面，跟主聊天页面互不影响
 ├── src/
 │   ├── server.js                 # Express 入口：CORS、静态资源、路由、错误处理
 │   ├── config.js                 # 读取并校验环境变量
-│   ├── routes/chat.js            # POST /api/chat, POST /api/chat/greeting
+│   ├── routes/
+│   │   ├── chat.js               # POST /api/chat, POST /api/chat/greeting（百炼 App 自带知识库）
+│   │   └── chatLocal.js           # POST /api/chat-local（本地知识库，仅供对比测试）
 │   └── services/
 │       ├── bailianClient.js      # 封装对阿里云百炼应用完成接口的调用
+│       ├── bailianGenericClient.js # 封装百炼"通用模型对话接口"调用，供本地知识库链路使用
 │       ├── chatService.js        # 编排：调用百炼 + 用户活跃记录 + 内容安全检查
+│       ├── localKbBridge.js      # 桥接 local-kb-tool 的检索逻辑（跨项目直接 require，不重复实现）
+│       ├── localChatService.js   # 编排：本地检索 + 拼提示词 + 调用通用模型接口
 │       ├── userStore.js          # SQLite：记录每个用户最后一次活跃时间
 │       └── contentSafety.js      # 回复文本英文字母检测 / 替换
 ├── data/                          # SQLite 数据文件（运行时自动创建，已 gitignore）
@@ -52,6 +59,9 @@ npm start
 | `BAILIAN_APP_ID` | 百炼应用 ID / 知识库 ID（**必填**） |
 | `BAILIAN_BASE_URL` | 百炼应用调用的基础地址（DashScope 原生格式的根路径 + `/apps`），一般不需要修改 |
 | `INACTIVITY_THRESHOLD_DAYS` | 用户超过多少天没来对话，就在开场白里提示 AI 体现"很久没聊"这件事，默认 3 |
+| `BAILIAN_GENERIC_BASE_URL` | 本地知识库链路用的百炼通用模型接口地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `BAILIAN_GENERIC_MODEL` | 本地知识库链路用的模型名，默认 `qwen-plus` |
+| `LOCAL_KB_NAMES` | `/api/chat-local` 要同时查询的本地知识库名字，逗号分隔，默认 `diet,body-composition` |
 
 `.env` 已加入 `.gitignore`，不会被提交；仓库中只保留 `.env.example` 模板。`data/` 目录（SQLite 数据库文件）同样已 gitignore。
 
@@ -91,6 +101,44 @@ npm start
 ### `GET /api/health`
 
 健康检查，返回 `{ "status": "ok" }`。
+
+### `POST /api/chat-local`（独立链路，仅供对比测试）
+
+跟上面的 `/api/chat` 是两条完全独立的路径，互不影响：不调用百炼 App 自带的知识库，而是先在本地检索 `local-kb-tool` 的 `diet` 和 `body-composition` 两个知识库，把检索到的片段拼进提示词，再调用百炼"通用模型对话接口"（`qwen-plus`）生成回答。
+
+请求体：
+
+```json
+{ "message": "减脂期间蛋白质应该吃多少" }
+```
+
+响应：
+
+```json
+{
+  "reply": "AI 的回复文本",
+  "retrieved": [
+    {
+      "kbName": "diet",
+      "error": null,
+      "chunks": [
+        { "text": "检索到的原文片段", "source": "xxx.docx", "hybridScore": 0.82, "semanticScore": 0.79, "keywordScore": 0.9 }
+      ]
+    },
+    { "kbName": "body-composition", "error": null, "chunks": [ /* ... */ ] }
+  ]
+}
+```
+
+`retrieved` 字段把两个知识库各自检索到的片段和打分都带回来了，方便直接判断"本地知识库这次到底命中了什么"，不用再单独跑 `local-kb-tool` 的 `npm run query` 去核对。
+
+**依赖前提**：这条链路是直接 `require` 引用 `local-kb-tool/src/query.js`（跨项目共用同一份检索逻辑，没有复制粘贴），所以要求：
+1. `local-kb-tool/` 里对应的知识库索引已经建好（`cd local-kb-tool && npm run build-index -- --kb diet` 和 `--kb body-composition`）；某个知识库索引不存在时，这条链路不会报错崩溃，只是该知识库的 `chunks` 为空、`error` 字段会说明原因。
+2. `local-kb-tool/node_modules` 已经装好依赖（`cd local-kb-tool && npm install`）——因为 Node 的模块解析是按文件实际位置找依赖，`backend` 不需要重复安装一份 `vectra`/`@xenova/transformers`。
+
+### 对比测试页面
+
+浏览器打开 `http://localhost:3001/compare.html`，输入同一个问题，会同时调用 `/api/chat` 和 `/api/chat-local`，两栏并排显示回复内容；本地知识库那一栏还能展开看到具体检索到了哪些片段、打分多少，方便逐条对比命中率和回答质量。这个页面完全独立于 `index.html` 主聊天界面，不会互相干扰。
 
 ## 用户身份与上次活跃时间
 

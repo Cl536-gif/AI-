@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>对比测试：百炼知识库 vs 本地知识库</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f2f2;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .composer { display: flex; gap: 8px; margin-bottom: 20px; }
+  #question {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+  }
+  #ask {
+    padding: 10px 18px;
+    font-size: 14px;
+    border: none;
+    border-radius: 6px;
+    background: #07c160;
+    color: #fff;
+    cursor: pointer;
+  }
+  #ask:disabled { background: #a8a8a8; cursor: not-allowed; }
+  .columns { display: flex; gap: 16px; align-items: flex-start; }
+  .col {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    padding: 16px;
+    min-height: 200px;
+  }
+  .col h2 { font-size: 14px; margin: 0 0 12px; color: #555; }
+  .reply { white-space: pre-wrap; font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+  .status { color: #8a8a8a; font-size: 13px; }
+  .error { color: #d33; font-size: 13px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 13px; color: #555; }
+  .chunk {
+    font-size: 12px;
+    color: #444;
+    background: #f7f7f7;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 6px;
+    white-space: pre-wrap;
+  }
+  .chunk-meta { color: #999; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<h1>对比测试：/api/chat（百炼 App 知识库）vs /api/chat-local（本地知识库）</h1>
+
+<div class="composer">
+  <input id="question" type="text" placeholder="输入同一个问题，两边同时提问…" autocomplete="off" />
+  <button id="ask">提问</button>
+</div>
+
+<div class="columns">
+  <div class="col">
+    <h2>百炼知识库模式（/api/chat）</h2>
+    <div id="bailian-result"><span class="status">等待提问…</span></div>
+  </div>
+  <div class="col">
+    <h2>本地知识库模式（/api/chat-local）</h2>
+    <div id="local-result"><span class="status">等待提问…</span></div>
+  </div>
+</div>
+
+<script>
+const questionInput = document.getElementById('question');
+const askBtn = document.getElementById('ask');
+const bailianResult = document.getElementById('bailian-result');
+const localResult = document.getElementById('local-result');
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function askBailian(message) {
+  bailianResult.innerHTML = '<span class="status">请求中…</span>';
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, userId: 'compare-tool' }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    bailianResult.innerHTML = '<div class="reply">' + escapeHtml(data.reply) + '</div>';
+  } catch (err) {
+    bailianResult.innerHTML = '<div class="error">请求失败: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function askLocal(message) {
+  localResult.innerHTML = '<span class="status">请求中…</span>';
+  try {
+    const res = await fetch('/api/chat-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+    let html = '<div class="reply">' + escapeHtml(data.reply) + '</div>';
+    html += '<details><summary>查看本次检索到的知识库片段</summary>';
+    (data.retrieved || []).forEach((kb) => {
+      html += '<div class="chunk-meta"><strong>' + escapeHtml(kb.kbName) + '</strong>' +
+        (kb.error ? ('（' + escapeHtml(kb.error) + '）') : '（' + kb.chunks.length + ' 段）') + '</div>';
+      kb.chunks.forEach((c) => {
+        html += '<div class="chunk">综合 ' + c.hybridScore.toFixed(4) +
+          '（语义 ' + c.semanticScore.toFixed(4) + ' + 关键词 ' + c.keywordScore.toFixed(4) +
+          '，来源: ' + escapeHtml(c.source) + '）\n' + escapeHtml(c.text) + '</div>';
+      });
+    });
+    html += '</details>';
+    localResult.innerHTML = html;
+  } catch (err) {
+    localResult.innerHTML = '<div class="error">请求失败: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function ask() {
+  const message = questionInput.value.trim();
+  if (!message) return;
+  askBtn.disabled = true;
+  await Promise.all([askBailian(message), askLocal(message)]);
+  askBtn.disabled = false;
+}
+
+askBtn.addEventListener('click', ask);
+questionInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') ask();
+});
+</script>
+</body>
+</html>
