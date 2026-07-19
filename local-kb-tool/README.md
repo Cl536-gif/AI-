@@ -5,6 +5,7 @@
 - [x] 1. 文档读取与处理 —— 读取 `.docx`、按段落切分、本地 embedding 向量化
 - [x] 2. 本地向量存储与检索 —— 存进本地向量索引，按问题检索最相关的片段（附来源文档名）
 - [ ] 3. 与百炼结果对比 —— 未实现，后续需要时再做
+- [x] 4. 检索效果批量测试 —— `src/genTestQuestions.js` + `src/evalRetrieval.js`，自动生成模拟用户问法并跑检索命中率测试
 
 全程可以完全离线运行（只有第一次生成向量时需要联网下载一次本地 embedding 模型）。
 
@@ -34,7 +35,11 @@ local-kb-tool/
 │   ├── keywordScore.js      # 关键词重合度打分，查询时跟语义相似度混合排序
 │   ├── kbPaths.js           # 解析 --kb <名字> 参数，算出对应的文档目录 / 索引目录
 │   ├── buildIndex.js        # npm run build-index 的入口
-│   └── query.js             # npm run query 的入口
+│   ├── query.js             # npm run query 的入口，检索逻辑抽成 retrieve() 供其他脚本复用
+│   ├── bailianClient.js     # 调用阿里云百炼通用模型接口，仅供检索效果测试脚本使用
+│   ├── genTestQuestions.js  # npm run gen-test-questions 的入口
+│   └── evalRetrieval.js     # npm run eval-retrieval 的入口
+├── eval-reports/            # 检索效果测试报告输出目录（已 gitignore）
 ├── .env.example
 └── package.json
 ```
@@ -76,6 +81,31 @@ npm run query -- --kb body-composition "微胖和瘦胖子怎么区分"
 
 > 用 `npm run query` 时问题参数前要加 `--`（`npm run query -- "问题"`），否则 npm 不会把参数透传给脚本。
 
+## 检索效果批量测试
+
+人工一个个想问题去测检索效果太慢，这两个脚本自动化了这件事：
+
+```bash
+# 第一步：给 diet 和 body-composition（或 EVAL_KB_NAMES 指定的知识库）里的每个片段
+# 各生成 3-5 个模拟用户口语化问法（调用百炼通用模型，需要配置 BAILIAN_API_KEY）
+npm run gen-test-questions
+
+# 第二步：拿生成的问题逐个跑检索，看能不能把"生成这个问题时依据的那个片段"
+# 检索回来、排第几名
+npm run eval-retrieval
+```
+
+跑完会在 `eval-reports/` 下生成一份带时间戳的报告，包含：
+
+- 总体命中率：排名第 1（理想情况）/ 命中但排名靠后 / 完全未命中，各自的数量和占比
+- "需要关注的问题清单"：只列出排名靠后或者没检索到的那些问题，每条都附上测试问法、对应的知识点原文、以及检索实际返回的第 1 名内容，方便你直接判断是真的检索出了问题，还是知识库里恰好有另一段同样合理的内容顶替了它
+
+**"知识点"的操作化定义**：这里把"索引里的每一个片段（chunk）"当作一个知识点——建索引时已经按 FAQ 的 Q/A 边界或固定字符数切分过，每个片段本身就相对独立，不需要再额外去理解文档的语义结构。
+
+**关于"排名靠后"**：判断标准是"由这段内容生成的问题，检索时这段内容本身有没有排在第一位"。这个标准偏严格——如果知识库里恰好有两段内容都能合理回答同一个问题，被判定为"靠后"也不一定是真正的缺陷，报告里已经把原文都附上了，方便你自己判断。
+
+生成的题库存在 `data/test-questions.json`（gitignore，不提交），下次只想重跑检索测试、不想重新花时间/调用次数生成问题，直接再跑一次 `npm run eval-retrieval` 就行，会复用已有的题库。想强制重新生成，直接删掉这个文件再跑 `gen-test-questions`。
+
 ## 配置项（可选，复制 `.env.example` 为 `.env` 后修改）
 
 | 变量名 | 默认值 | 说明 |
@@ -88,6 +118,11 @@ npm run query -- --kb body-composition "微胖和瘦胖子怎么区分"
 | `KB_QUERY_INSTRUCTION` | （内置 BGE 官方推荐前缀） | 查询时自动加在问题前面的检索指令前缀，换了非 BGE 模型可以设成空字符串关掉 |
 | `KB_HF_ENDPOINT` | `https://huggingface.co` | 下载 embedding 模型的地址，国内连不上/超时时改成 `https://hf-mirror.com`（URL 结构兼容，直接替换即可） |
 | `KB_KEYWORD_WEIGHT` | `0.35` | 混合检索里关键词重合度的权重（0~1），语义相似度权重 = 1 减去这个值，设成 0 即为纯语义检索 |
+| `BAILIAN_API_KEY` | 无 | 检索效果测试脚本用，调用阿里云百炼通用模型接口生成模拟问法，可直接复用 `backend/.env` 里的值 |
+| `BAILIAN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 同上 |
+| `BAILIAN_MODEL` | `qwen-plus` | 同上 |
+| `EVAL_KB_NAMES` | `diet,body-composition` | 检索效果测试要覆盖的知识库名字，逗号分隔 |
+| `EVAL_GEN_DELAY_MS` | `400` | 生成测试问法时两次调用百炼接口之间的间隔（毫秒） |
 
 ### 关于混合检索（语义 + 关键词）
 
