@@ -1,6 +1,7 @@
 const config = require('../config');
 const localKbBridge = require('./localKbBridge');
 const bailianGenericClient = require('./bailianGenericClient');
+const { SYSTEM_PROMPT } = require('./systemPrompt');
 
 const TOP_K_PER_KB = 5;
 
@@ -29,7 +30,7 @@ function buildPrompt(question, perKb) {
 async function sendLocalChatMessage({ message }) {
   const perKb = await localKbBridge.retrieveFromKbs(message, config.localKbNames);
   const prompt = buildPrompt(message, perKb);
-  const reply = await bailianGenericClient.chat(prompt);
+  const reply = await bailianGenericClient.chat(prompt, { systemPrompt: SYSTEM_PROMPT });
 
   return {
     reply,

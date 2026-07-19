@@ -5,9 +5,12 @@ const REQUEST_TIMEOUT_MS = 30000;
 /**
  * 调用阿里云百炼"通用模型对话接口"（OpenAI 兼容模式，比如 qwen-plus），
  * 跟 bailianClient.js 调用的那个绑定了知识库的百炼 App 是两条完全独立的路径：
- * 这里只是纯粹的模型问答，本地知识库检索结果需要自己拼进 prompt 里传进来。
+ * 这里只是纯粹的模型问答，本地知识库检索结果和系统提示词都需要调用方自己拼好传进来。
+ *
+ * systemPrompt 可选：不传就是纯用户消息，传了就作为 system 角色单独放一条，
+ * 而不是跟用户消息拼在一起——这样模型对指令的遵守程度通常更好。
  */
-async function chat(prompt) {
+async function chat(userPrompt, { systemPrompt } = {}) {
   const { apiKey, genericBaseUrl, genericModel } = config.bailian;
 
   if (!apiKey) {
@@ -15,6 +18,12 @@ async function chat(prompt) {
   }
 
   const url = `${genericBaseUrl.replace(/\/$/, '')}/chat/completions`;
+
+  const messages = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: userPrompt });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -29,7 +38,7 @@ async function chat(prompt) {
       },
       body: JSON.stringify({
         model: genericModel,
-        messages: [{ role: 'user', content: prompt }],
+        messages,
       }),
       signal: controller.signal,
     });
