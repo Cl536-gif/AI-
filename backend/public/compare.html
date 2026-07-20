@@ -200,10 +200,13 @@ async function askBailian(message) {
   renderBailianLog();
 
   try {
+    const body = { message, userId: 'compare-tool' };
+    if (bailianSessionId) body.sessionId = bailianSessionId;
+
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, sessionId: bailianSessionId, userId: 'compare-tool' }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
