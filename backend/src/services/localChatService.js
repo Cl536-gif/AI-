@@ -26,11 +26,15 @@ function buildPrompt(question, perKb) {
 /**
  * 独立的本地知识库问答链路：本地向量检索 + 通用模型对话接口，跟 /api/chat
  * （百炼 App 自带知识库）完全分开，只用于人工对比两边的命中率和回答质量。
+ *
+ * history 可选：之前几轮的原始对话记录（不含检索资料，只有用户说的话和 AI
+ * 的回复），用于支持多轮连续对话。只有"这一轮"的问题会做检索、拼资料，
+ * 历史轮次直接原样传给模型，不重复检索。
  */
-async function sendLocalChatMessage({ message }) {
+async function sendLocalChatMessage({ message, history }) {
   const perKb = await localKbBridge.retrieveFromKbs(message, config.localKbNames);
   const prompt = buildPrompt(message, perKb);
-  const reply = await bailianGenericClient.chat(prompt, { systemPrompt: SYSTEM_PROMPT });
+  const reply = await bailianGenericClient.chat(prompt, { systemPrompt: SYSTEM_PROMPT, history });
 
   return {
     reply,

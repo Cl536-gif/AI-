@@ -9,8 +9,10 @@ const REQUEST_TIMEOUT_MS = 30000;
  *
  * systemPrompt 可选：不传就是纯用户消息，传了就作为 system 角色单独放一条，
  * 而不是跟用户消息拼在一起——这样模型对指令的遵守程度通常更好。
+ * history 可选：之前几轮的对话记录（[{role:'user'|'assistant', content}, ...]），
+ * 用于支持多轮连续对话，不传就是单轮问答，行为和之前一样。
  */
-async function chat(userPrompt, { systemPrompt } = {}) {
+async function chat(userPrompt, { systemPrompt, history } = {}) {
   const { apiKey, genericBaseUrl, genericModel } = config.bailian;
 
   if (!apiKey) {
@@ -22,6 +24,13 @@ async function chat(userPrompt, { systemPrompt } = {}) {
   const messages = [];
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
+  }
+  if (Array.isArray(history)) {
+    history.forEach((turn) => {
+      if (turn && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string') {
+        messages.push({ role: turn.role, content: turn.content });
+      }
+    });
   }
   messages.push({ role: 'user', content: userPrompt });
 

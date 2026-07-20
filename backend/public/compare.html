@@ -13,7 +13,25 @@
     background: #f2f2f2;
     color: #1a1a1a;
   }
-  h1 { font-size: 18px; margin: 0 0 16px; }
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  #reset {
+    padding: 8px 14px;
+    font-size: 13px;
+    border: 1px solid #d33;
+    border-radius: 6px;
+    background: #fff;
+    color: #d33;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  #reset:hover { background: #fff0f0; }
   .composer { display: flex; gap: 8px; margin-bottom: 20px; }
   #question {
     flex: 1;
@@ -35,18 +53,40 @@
   .columns { display: flex; gap: 16px; align-items: flex-start; }
   .col {
     flex: 1;
+    min-width: 0;
     background: #fff;
     border: 1px solid #d9d9d9;
     border-radius: 8px;
     padding: 16px;
-    min-height: 200px;
+    display: flex;
+    flex-direction: column;
   }
-  .col h2 { font-size: 14px; margin: 0 0 12px; color: #555; }
-  .reply { white-space: pre-wrap; font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+  .col h2 { font-size: 14px; margin: 0 0 12px; color: #555; flex: 0 0 auto; }
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 70vh;
+    padding-right: 4px;
+  }
+  .turn { margin-bottom: 16px; }
+  .turn:last-child { margin-bottom: 0; }
+  .bubble {
+    display: inline-block;
+    max-width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .turn--user { text-align: right; }
+  .turn--user .bubble { background: #95ec69; }
+  .turn--assistant .bubble { background: #f0f0f0; }
   .status { color: #8a8a8a; font-size: 13px; }
   .error { color: #d33; font-size: 13px; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; font-size: 13px; color: #555; }
+  .empty-hint { color: #b3b3b3; font-size: 13px; }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; font-size: 12px; color: #888; }
   .chunk {
     font-size: 12px;
     color: #444;
@@ -55,34 +95,45 @@
     padding: 8px;
     margin-top: 6px;
     white-space: pre-wrap;
+    text-align: left;
   }
-  .chunk-meta { color: #999; margin-bottom: 4px; }
+  .chunk-meta { color: #999; margin-bottom: 4px; text-align: left; }
 </style>
 </head>
 <body>
-<h1>对比测试：/api/chat（百炼 App 知识库）vs /api/chat-local（本地知识库）</h1>
+<div class="top-bar">
+  <h1>对比测试：/api/chat（百炼 App 知识库）vs /api/chat-local（本地知识库）—— 支持多轮对话</h1>
+  <button id="reset" type="button">清空对话 / 重新开始</button>
+</div>
 
 <div class="composer">
-  <input id="question" type="text" placeholder="输入同一个问题，两边同时提问…" autocomplete="off" />
-  <button id="ask">提问</button>
+  <input id="question" type="text" placeholder="输入消息，两边各自维护自己的对话历史…" autocomplete="off" />
+  <button id="ask">发送</button>
 </div>
 
 <div class="columns">
   <div class="col">
     <h2>百炼知识库模式（/api/chat）</h2>
-    <div id="bailian-result"><span class="status">等待提问…</span></div>
+    <div id="bailian-log" class="log"><span class="empty-hint">还没有对话，发一条消息开始测试。</span></div>
   </div>
   <div class="col">
     <h2>本地知识库模式（/api/chat-local）</h2>
-    <div id="local-result"><span class="status">等待提问…</span></div>
+    <div id="local-log" class="log"><span class="empty-hint">还没有对话，发一条消息开始测试。</span></div>
   </div>
 </div>
 
 <script>
 const questionInput = document.getElementById('question');
 const askBtn = document.getElementById('ask');
-const bailianResult = document.getElementById('bailian-result');
-const localResult = document.getElementById('local-result');
+const resetBtn = document.getElementById('reset');
+const bailianLog = document.getElementById('bailian-log');
+const localLog = document.getElementById('local-log');
+
+// 两边各自独立维护自己的多轮对话状态，互不影响
+let bailianSessionId = null;
+let bailianTurns = []; // [{ role: 'user'|'assistant', text }]
+let localHistory = []; // [{ role: 'user'|'assistant', content }]，原样传给后端当上下文
+let localTurns = []; // [{ role, text, retrieved? }]
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -90,63 +141,139 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function renderBailianLog() {
+  if (bailianTurns.length === 0) {
+    bailianLog.innerHTML = '<span class="empty-hint">还没有对话，发一条消息开始测试。</span>';
+    return;
+  }
+  bailianLog.innerHTML = bailianTurns.map((t) => {
+    const cls = t.role === 'user' ? 'turn turn--user' : 'turn turn--assistant';
+    if (t.pending) {
+      return `<div class="${cls}"><span class="status">请求中…</span></div>`;
+    }
+    if (t.error) {
+      return `<div class="${cls}"><span class="error">请求失败: ${escapeHtml(t.error)}</span></div>`;
+    }
+    return `<div class="${cls}"><span class="bubble">${escapeHtml(t.text)}</span></div>`;
+  }).join('');
+  bailianLog.scrollTop = bailianLog.scrollHeight;
+}
+
+function renderLocalLog() {
+  if (localTurns.length === 0) {
+    localLog.innerHTML = '<span class="empty-hint">还没有对话，发一条消息开始测试。</span>';
+    return;
+  }
+  localLog.innerHTML = localTurns.map((t) => {
+    const cls = t.role === 'user' ? 'turn turn--user' : 'turn turn--assistant';
+    if (t.pending) {
+      return `<div class="${cls}"><span class="status">请求中…</span></div>`;
+    }
+    if (t.error) {
+      return `<div class="${cls}"><span class="error">请求失败: ${escapeHtml(t.error)}</span></div>`;
+    }
+
+    let html = `<div class="${cls}"><span class="bubble">${escapeHtml(t.text)}</span>`;
+    if (t.retrieved) {
+      html += '<details><summary>查看本轮检索到的知识库片段</summary>';
+      t.retrieved.forEach((kb) => {
+        html += '<div class="chunk-meta"><strong>' + escapeHtml(kb.kbName) + '</strong>' +
+          (kb.error ? ('（' + escapeHtml(kb.error) + '）') : '（' + kb.chunks.length + ' 段）') + '</div>';
+        kb.chunks.forEach((c) => {
+          html += '<div class="chunk">综合 ' + c.hybridScore.toFixed(4) +
+            '（语义 ' + c.semanticScore.toFixed(4) + ' + 关键词 ' + c.keywordScore.toFixed(4) +
+            '，来源: ' + escapeHtml(c.source) + '）\n' + escapeHtml(c.text) + '</div>';
+        });
+      });
+      html += '</details>';
+    }
+    html += '</div>';
+    return html;
+  }).join('');
+  localLog.scrollTop = localLog.scrollHeight;
+}
+
 async function askBailian(message) {
-  bailianResult.innerHTML = '<span class="status">请求中…</span>';
+  bailianTurns.push({ role: 'user', text: message });
+  const pendingTurn = { role: 'assistant', pending: true };
+  bailianTurns.push(pendingTurn);
+  renderBailianLog();
+
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, userId: 'compare-tool' }),
+      body: JSON.stringify({ message, sessionId: bailianSessionId, userId: 'compare-tool' }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-    bailianResult.innerHTML = '<div class="reply">' + escapeHtml(data.reply) + '</div>';
+    bailianSessionId = data.sessionId || bailianSessionId;
+    delete pendingTurn.pending;
+    pendingTurn.text = data.reply;
   } catch (err) {
-    bailianResult.innerHTML = '<div class="error">请求失败: ' + escapeHtml(err.message) + '</div>';
+    delete pendingTurn.pending;
+    pendingTurn.error = err.message;
   }
+  renderBailianLog();
 }
 
 async function askLocal(message) {
-  localResult.innerHTML = '<span class="status">请求中…</span>';
+  const historyForRequest = localHistory.slice();
+
+  localTurns.push({ role: 'user', text: message });
+  const pendingTurn = { role: 'assistant', pending: true };
+  localTurns.push(pendingTurn);
+  renderLocalLog();
+
   try {
     const res = await fetch('/api/chat-local', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history: historyForRequest }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
 
-    let html = '<div class="reply">' + escapeHtml(data.reply) + '</div>';
-    html += '<details><summary>查看本次检索到的知识库片段</summary>';
-    (data.retrieved || []).forEach((kb) => {
-      html += '<div class="chunk-meta"><strong>' + escapeHtml(kb.kbName) + '</strong>' +
-        (kb.error ? ('（' + escapeHtml(kb.error) + '）') : '（' + kb.chunks.length + ' 段）') + '</div>';
-      kb.chunks.forEach((c) => {
-        html += '<div class="chunk">综合 ' + c.hybridScore.toFixed(4) +
-          '（语义 ' + c.semanticScore.toFixed(4) + ' + 关键词 ' + c.keywordScore.toFixed(4) +
-          '，来源: ' + escapeHtml(c.source) + '）\n' + escapeHtml(c.text) + '</div>';
-      });
-    });
-    html += '</details>';
-    localResult.innerHTML = html;
+    delete pendingTurn.pending;
+    pendingTurn.text = data.reply;
+    pendingTurn.retrieved = data.retrieved || [];
+
+    // 更新历史记录，供下一轮请求带上（只存原始文本，不含检索资料）
+    localHistory.push({ role: 'user', content: message });
+    localHistory.push({ role: 'assistant', content: data.reply });
   } catch (err) {
-    localResult.innerHTML = '<div class="error">请求失败: ' + escapeHtml(err.message) + '</div>';
+    delete pendingTurn.pending;
+    pendingTurn.error = err.message;
   }
+  renderLocalLog();
 }
 
 async function ask() {
   const message = questionInput.value.trim();
   if (!message) return;
+  questionInput.value = '';
   askBtn.disabled = true;
   await Promise.all([askBailian(message), askLocal(message)]);
   askBtn.disabled = false;
+  questionInput.focus();
+}
+
+function resetAll() {
+  bailianSessionId = null;
+  bailianTurns = [];
+  localHistory = [];
+  localTurns = [];
+  renderBailianLog();
+  renderLocalLog();
+  questionInput.value = '';
+  questionInput.focus();
 }
 
 askBtn.addEventListener('click', ask);
 questionInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') ask();
 });
+resetBtn.addEventListener('click', resetAll);
 </script>
 </body>
 </html>
