@@ -135,6 +135,10 @@ let bailianTurns = []; // [{ role: 'user'|'assistant', text }]
 let localHistory = []; // [{ role: 'user'|'assistant', content }]，原样传给后端当上下文
 let localTurns = []; // [{ role, text, retrieved? }]
 
+// 清空对话时递增，用来识别"重置前发出、重置后才返回"的过期请求，
+// 避免这类请求的回调把内容写回已经清空的状态里
+let conversationEpoch = 0;
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -193,7 +197,7 @@ function renderLocalLog() {
   localLog.scrollTop = localLog.scrollHeight;
 }
 
-async function askBailian(message) {
+async function askBailian(message, epoch) {
   bailianTurns.push({ role: 'user', text: message });
   const pendingTurn = { role: 'assistant', pending: true };
   bailianTurns.push(pendingTurn);
@@ -210,17 +214,19 @@ async function askBailian(message) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (epoch !== conversationEpoch) return; // 对话已被重置，这个回复已经过期，丢弃
     bailianSessionId = data.sessionId || bailianSessionId;
     delete pendingTurn.pending;
     pendingTurn.text = data.reply;
   } catch (err) {
+    if (epoch !== conversationEpoch) return;
     delete pendingTurn.pending;
     pendingTurn.error = err.message;
   }
   renderBailianLog();
 }
 
-async function askLocal(message) {
+async function askLocal(message, epoch) {
   const historyForRequest = localHistory.slice();
 
   localTurns.push({ role: 'user', text: message });
@@ -236,6 +242,7 @@ async function askLocal(message) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (epoch !== conversationEpoch) return; // 对话已被重置，这个回复已经过期，丢弃
 
     delete pendingTurn.pending;
     pendingTurn.text = data.reply;
@@ -245,6 +252,7 @@ async function askLocal(message) {
     localHistory.push({ role: 'user', content: message });
     localHistory.push({ role: 'assistant', content: data.reply });
   } catch (err) {
+    if (epoch !== conversationEpoch) return;
     delete pendingTurn.pending;
     pendingTurn.error = err.message;
   }
@@ -254,14 +262,16 @@ async function askLocal(message) {
 async function ask() {
   const message = questionInput.value.trim();
   if (!message) return;
+  const epoch = conversationEpoch;
   questionInput.value = '';
   askBtn.disabled = true;
-  await Promise.all([askBailian(message), askLocal(message)]);
+  await Promise.all([askBailian(message, epoch), askLocal(message, epoch)]);
   askBtn.disabled = false;
   questionInput.focus();
 }
 
 function resetAll() {
+  conversationEpoch += 1; // 让任何还没返回的旧请求在回调时识别出自己已经过期
   bailianSessionId = null;
   bailianTurns = [];
   localHistory = [];
