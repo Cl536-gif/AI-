@@ -67,6 +67,20 @@ const DietState = Annotation.Root({
     reducer: (_left, right) => right,
     default: () => [],
   }),
+
+  // checkCompleteness 节点的判断结果：六项是否已经全部确认
+  isComplete: Annotation({
+    reducer: (_left, right) => right,
+    default: () => false,
+  }),
+
+  // checkCompleteness 判定还没收集完时，接下来该问六项里的哪一项
+  // （SLOT_KEYS 顺序里第一个还没确认的），交给 askNextQuestion 节点
+  // 生成实际问出来的自然语言问题。全部确认完时是 null。
+  nextSlotToAsk: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
 });
 
 module.exports = {
