@@ -96,6 +96,32 @@ function buildRetryInstruction(violations) {
 }
 
 /**
+ * 重试耗尽后的最终确定性修复：只处理能安全用字符串操作修的两类——
+ * ack_opener（直接切掉开头那个短语）和 parallel_question（把"是X，
+ * 还是Y？"的逗号去掉、合并成一句连读问句，比如"是食堂还是点外卖呀？"，
+ * 这跟真实测试里模型自己有时会自然生成的、不违规的表达方式是一致的）。
+ * 其余三类（markdown/英文字母/编造原话）不做字符串强行处理，避免破坏
+ * 语义或拼出读不通的句子——这几类如果重试耗尽仍然违规，只能原样返回
+ * 连同 violations 一起交给调用方处理。
+ */
+function applyLastResortFix(text, violations) {
+  let fixed = text;
+
+  if (violations.some((v) => v.type === 'ack_opener')) {
+    ACK_OPENER_PHRASES.forEach((phrase) => {
+      const re = new RegExp(`^\\s*${phrase}[，,、]?\\s*`);
+      fixed = fixed.replace(re, '');
+    });
+  }
+
+  if (violations.some((v) => v.type === 'parallel_question')) {
+    fixed = fixed.replace(/是([^，,？?。！\n]+)[，,]\s*(还是[^？?\n]+[？?])/g, '是$1$2');
+  }
+
+  return fixed;
+}
+
+/**
  * 带格式兜底检测的生成流程：调用方提供一个 generate(retryInstruction) 函数
  * 自己负责怎么拼提示词、怎么调模型，这个模块只负责"生成完检测一遍，有
  * 问题就把具体违规告诉调用方、让它带着这个说明再生成一次"，不关心调用方
@@ -137,10 +163,27 @@ async function generateWithFormatGuard({ generate, userMessages = [], maxRetries
     retryInstruction = buildRetryInstruction(violations);
   }
 
-  // 超过重试上限仍有违规：返回最后一次结果，不能无限重试下去，
-  // 调用方可以自行决定要不要针对 violations 里的具体类型做兜底处理
-  // （比如英文字母这一类可以复用 contentSafety.sanitize 强制清理）。
-  return { text: lastText, violations: lastViolations, attempts: maxRetries + 1 };
+  // 超过重试上限仍有违规：先尝试确定性字符串修复（只覆盖 ack_opener
+  // 和 parallel_question 这两类能安全处理的），修复后重新检测一遍；
+  // 如果违规确实减少了就用修复后的版本，否则原样返回，不能无限重试。
+  const fixedText = applyLastResortFix(lastText, lastViolations);
+  const fixedViolations = detectFormatViolations(fixedText, { userMessages });
+
+  if (process.env.FORMAT_GUARD_DEBUG && fixedText !== lastText) {
+    // eslint-disable-next-line no-console
+    console.log('[formatGuard] 重试耗尽，尝试字符串级最终修复:', fixedText);
+    // eslint-disable-next-line no-console
+    console.log(
+      '[formatGuard] 修复后剩余违规:',
+      fixedViolations.length === 0 ? '无' : fixedViolations.map((v) => v.type).join(', ')
+    );
+  }
+
+  if (fixedViolations.length < lastViolations.length) {
+    return { text: fixedText, violations: fixedViolations, attempts: maxRetries + 1, autoFixed: true };
+  }
+
+  return { text: lastText, violations: lastViolations, attempts: maxRetries + 1, autoFixed: false };
 }
 
 module.exports = { detectFormatViolations, generateWithFormatGuard };
