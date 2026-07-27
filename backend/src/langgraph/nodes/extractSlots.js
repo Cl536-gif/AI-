@@ -4,6 +4,7 @@
 const { z } = require('zod');
 const { model } = require('../model');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
+const { getMessageText, findLastUserMessage } = require('../utils/messages');
 
 const extractionSchema = z.object({
   scene: z
@@ -55,31 +56,6 @@ const extractionSchema = z.object({
 const structuredModel = model.withStructuredOutput(extractionSchema, {
   name: 'extract_slots',
 });
-
-function getMessageRole(message) {
-  if (!message) return undefined;
-  if (typeof message.role === 'string') return message.role;
-  if (typeof message._getType === 'function') {
-    const type = message._getType();
-    return type === 'human' ? 'human' : type;
-  }
-  return undefined;
-}
-
-function getMessageText(message) {
-  if (!message) return '';
-  if (typeof message.content === 'string') return message.content;
-  return '';
-}
-
-function findLastUserMessage(messages) {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (getMessageRole(messages[i]) === 'human') {
-      return messages[i];
-    }
-  }
-  return null;
-}
 
 function formatKnownSlots(slots) {
   const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
