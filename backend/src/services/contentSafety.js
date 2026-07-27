@@ -1,4 +1,5 @@
-const ALLOWED_TERMS = ['AI秘书'];
+// "饮食秘书"这个身份自称本身不含英文字母，不需要任何豁免词
+const ALLOWED_TERMS = [];
 const ENGLISH_RUN_REGEX = /[A-Za-z]{2,}/g;
 
 function placeholderFor(index) {

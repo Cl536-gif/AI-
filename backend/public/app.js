@@ -53,7 +53,7 @@
   }
 
   async function loadGreeting() {
-    const pending = appendBubble('AI秘书正在输入…', 'ai', 'bubble--pending');
+    const pending = appendBubble('饮食秘书正在输入…', 'ai', 'bubble--pending');
     try {
       const data = await postJson('/api/chat/greeting', { userId });
       sessionId = data.sessionId || null;
@@ -68,7 +68,7 @@
 
   async function sendMessage(text) {
     appendBubble(text, 'user');
-    const pending = appendBubble('AI秘书正在输入…', 'ai', 'bubble--pending');
+    const pending = appendBubble('饮食秘书正在输入…', 'ai', 'bubble--pending');
 
     try {
       const data = await postJson('/api/chat', { userId, message: text, sessionId });

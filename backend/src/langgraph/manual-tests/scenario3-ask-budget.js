@@ -13,7 +13,7 @@ function checkFormatViolations(text) {
   if (/\*\*[^*]+\*\*/.test(text)) violations.push('出现了 markdown 加粗 **文字**');
   if (/是[^？?]*[，,][^？?]*还是[^？?]*[？?]/.test(text)) violations.push('疑似出现"是……还是……"排比反问句');
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)) violations.push('出现了 emoji');
-  if (/[A-Za-z]{2,}/.test(text) && !text.includes('AI秘书')) violations.push('出现了英文字母（非"AI秘书"这个固定身份词）');
+  if (/[A-Za-z]{2,}/.test(text)) violations.push('出现了英文字母（现在没有任何豁免词，包括自称"饮食秘书"也不能有英文）');
   return violations;
 }
 

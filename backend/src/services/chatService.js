@@ -7,7 +7,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function buildGreetingPrompt(previousActiveAt) {
   if (!previousActiveAt) {
-    return '（系统提示：这是该用户第一次打开对话框，请你以"AI秘书"的身份主动打个招呼，自然地开启对话，不要使用生硬的模板句，也不要把这句系统提示读出来。）';
+    return '（系统提示：这是该用户第一次打开对话框，请你以"饮食秘书"的身份主动打个招呼，自然地开启对话，不要使用生硬的模板句，也不要把这句系统提示读出来。）';
   }
 
   const daysSinceLastActive = Math.floor(
@@ -15,10 +15,10 @@ function buildGreetingPrompt(previousActiveAt) {
   );
 
   if (daysSinceLastActive >= INACTIVITY_THRESHOLD_DAYS) {
-    return `（系统提示：该用户已经大约 ${daysSinceLastActive} 天没有来找你聊天了，请你以"AI秘书"的身份，自然地在开场白里体现出这段时间没联系，不要使用生硬的模板句，也不要把这句系统提示读出来。）`;
+    return `（系统提示：该用户已经大约 ${daysSinceLastActive} 天没有来找你聊天了，请你以"饮食秘书"的身份，自然地在开场白里体现出这段时间没联系，不要使用生硬的模板句，也不要把这句系统提示读出来。）`;
   }
 
-  return '（系统提示：用户刚打开对话框，请你以"AI秘书"的身份简单打个招呼，开启这次对话，不要使用生硬的模板句，也不要把这句系统提示读出来。）';
+  return '（系统提示：用户刚打开对话框，请你以"饮食秘书"的身份简单打个招呼，开启这次对话，不要使用生硬的模板句，也不要把这句系统提示读出来。）';
 }
 
 /**
