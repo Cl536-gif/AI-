@@ -12,7 +12,9 @@
 // 又自己重新判断一遍进度，跟状态机的决定打架。
 const { model } = require('../model');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
+const { generateWithFormatGuard } = require('../../services/formatGuard');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
+const { getMessageRole, getMessageText } = require('../utils/messages');
 
 function formatKnownSlots(slots) {
   const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
@@ -34,23 +36,33 @@ async function askNextQuestion(state) {
     '结合上面完整的系统规则（对话流程/情绪优先/格式/真实性等所有规则依然全部' +
     '生效），把这一项自然地问出来。';
 
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'system', content: taskInstruction },
-    ...state.messages,
-  ];
+  const userMessages = state.messages
+    .filter((m) => getMessageRole(m) === 'human')
+    .map((m) => getMessageText(m));
 
-  const response = await model.invoke(messages);
+  const { text: replyText } = await generateWithFormatGuard({
+    userMessages,
+    generate: async (retryInstruction) => {
+      const messages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: taskInstruction },
+        ...(retryInstruction ? [{ role: 'system', content: `【重新生成要求】${retryInstruction}` }] : []),
+        ...state.messages,
+      ];
+      const response = await model.invoke(messages);
+      return response.content;
+    },
+  });
 
   if (process.env.LANGGRAPH_DEBUG) {
     // eslint-disable-next-line no-console
     console.log(`[askNextQuestion] 问的是: ${nextSlot}`);
     // eslint-disable-next-line no-console
-    console.log('[askNextQuestion] 生成的问题:', response.content);
+    console.log('[askNextQuestion] 生成的问题:', replyText);
   }
 
   return {
-    messages: [{ role: 'ai', content: response.content }],
+    messages: [{ role: 'ai', content: replyText }],
     lastAskedSlot: nextSlot,
   };
 }

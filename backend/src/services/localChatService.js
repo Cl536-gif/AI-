@@ -2,6 +2,7 @@ const config = require('../config');
 const localKbBridge = require('./localKbBridge');
 const bailianGenericClient = require('./bailianGenericClient');
 const { SYSTEM_PROMPT } = require('./systemPrompt');
+const { generateWithFormatGuard } = require('./formatGuard');
 
 const TOP_K_PER_KB = 5;
 
@@ -34,7 +35,19 @@ function buildPrompt(question, perKb) {
 async function sendLocalChatMessage({ message, history }) {
   const perKb = await localKbBridge.retrieveFromKbs(message, config.localKbNames);
   const prompt = buildPrompt(message, perKb);
-  const reply = await bailianGenericClient.chat(prompt, { systemPrompt: SYSTEM_PROMPT, history });
+
+  const priorUserMessages = (history || [])
+    .filter((turn) => turn.role === 'user')
+    .map((turn) => turn.content);
+  const userMessages = [...priorUserMessages, message];
+
+  const { text: reply } = await generateWithFormatGuard({
+    userMessages,
+    generate: (retryInstruction) => {
+      const systemPrompt = retryInstruction ? `${SYSTEM_PROMPT}\n\n【重新生成要求】${retryInstruction}` : SYSTEM_PROMPT;
+      return bailianGenericClient.chat(prompt, { systemPrompt, history });
+    },
+  });
 
   return {
     reply,
