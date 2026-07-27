@@ -15,10 +15,10 @@ const ClassificationSchema = z.object({
       '判断新候选值和旧的已确认值之间的关系。' +
         'same_meaning：只是换了个说法或补充了细节，实际还是同一件事，不算改口。' +
         'correction：用户确实是在改口/纠正这一项，新旧值真的互相矛盾。' +
-        'incidental_mention：用户只是在回答别的问题时顺嘴提到了这个词，并不是' +
-        '真的想更新或纠正这一项——尤其是这一轮AI实际问的是别的项、用户回答的' +
-        '主要内容也是在讲别的事情时，优先考虑这一种，不要轻易判成correction。'
+        'incidental_mention：用户只是在回答别的问题时顺嘴提到了这个词、这个词只是' +
+        '句子里的次要修饰成分，并不是用户主动想更新或纠正这一项。'
     ),
+  reason: z.string().describe('用一句话简单说明为什么这么判断，方便调试排查。'),
 });
 
 const structuredClassifier = model.withStructuredOutput(ClassificationSchema, {
@@ -32,12 +32,20 @@ async function classifyPotentialConflict({ slotLabel, oldValue, newValue, focusL
       content:
         `用户此前已经明确确认过"${slotLabel}"这一项是"${oldValue}"。这一轮消息里，` +
         `抽取到了一个不一样的候选值"${newValue}"。这一轮AI实际问的是"${focusLabel}"。\n\n` +
-        '请判断这个新候选值和旧值之间的关系。',
+        '请判断这个新候选值和旧值之间的关系。关键判断标准不是"这一轮AI问的是不是' +
+        `这一项"，而是"用户是不是在主动、明确地断言/修正${slotLabel}这件事本身"。\n\n` +
+        '两种容易混淆的情况，注意区分：\n' +
+        '1. 用户带着"哦对了""其实是""不是……是……""我刚才说错了"这类自我修正/补充' +
+        '的语气，主动把这一项的内容重新说了一遍——哪怕这一轮AI问的是别的项，这也' +
+        '应该判成 correction，不能因为"跟当前问题无关"就归成 incidental_mention。\n' +
+        '2. 这个词只是用户回答别的问题时，句子里一个次要的修饰/背景成分，用户的' +
+        '注意力完全在回答别的问题上，没有表现出"我要更新/纠正这一项"的意图——' +
+        '这种才是 incidental_mention。',
     },
     { role: 'human', content: userText },
   ];
   const result = await structuredClassifier.invoke(prompt);
-  return result.classification;
+  return result;
 }
 
 /**
@@ -75,13 +83,18 @@ async function conflictRouter(state) {
     }
 
     // eslint-disable-next-line no-await-in-loop
-    const classification = await classifyPotentialConflict({
+    const { classification, reason } = await classifyPotentialConflict({
       slotLabel: SLOT_LABELS[key],
       oldValue: slot.value,
       newValue: candidate,
       focusLabel,
       userText,
     });
+
+    if (process.env.LANGGRAPH_DEBUG) {
+      // eslint-disable-next-line no-console
+      console.log(`[conflictRouter] ${key}: ${slot.value} -> ${candidate} => ${classification} (${reason})`);
+    }
 
     if (classification === 'same_meaning') {
       slotUpdates[key] = { value: candidate, confirmed: true };

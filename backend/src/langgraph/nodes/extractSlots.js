@@ -107,6 +107,13 @@ async function extractSlots(state) {
     }
   });
 
+  if (process.env.LANGGRAPH_DEBUG) {
+    // eslint-disable-next-line no-console
+    console.log('[extractSlots] 用户消息:', userText);
+    // eslint-disable-next-line no-console
+    console.log('[extractSlots] 抽取到的候选值:', JSON.stringify(candidateSlots));
+  }
+
   return { candidateSlots };
 }
 

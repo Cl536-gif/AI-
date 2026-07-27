@@ -35,7 +35,8 @@ async function main() {
   console.log('slots.scene:', JSON.stringify(state.slots.scene));
   console.log('pendingConfirmation:', JSON.stringify(state.pendingConfirmation));
   const lastMsg = state.messages[state.messages.length - 1];
-  console.log('AI回复:', lastMsg.content ?? '(本轮没有新回复，检查是否符合预期)');
+  const lastMsgIsAi = lastMsg && lastMsg.role !== 'human';
+  console.log('AI回复:', lastMsgIsAi ? lastMsg.content : '(本轮没有生成新的AI回复——最后一条消息还是用户自己那句话)');
 
   console.log('\n--- 预期：slots.scene 应该还是 {value:"外卖",confirmed:true}（没被直接覆盖），');
   console.log('    pendingConfirmation 应该非空（field=scene），AI回复应该是一句确认问句 ---');
