@@ -124,6 +124,8 @@ async function generateWithFormatGuard({ generate, userMessages = [], maxRetries
       console.log(
         `[formatGuard] 第${attempt + 1}次生成${violations.length === 0 ? '通过' : '命中违规: ' + violations.map((v) => v.type).join(', ')}`
       );
+      // eslint-disable-next-line no-console
+      console.log(`[formatGuard] 第${attempt + 1}次生成的完整文本:`, text);
     }
 
     if (violations.length === 0) {
