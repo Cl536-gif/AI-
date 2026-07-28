@@ -56,13 +56,26 @@ async function classifyPotentialConflict({ slotLabel, oldValue, newValue, focusL
  *   - same_meaning：更新措辞但依然算已确认，不触发确认流程。
  *   - correction：记录进 pendingConfirmation，交给 askConfirmation 生成确认问题。
  *   - incidental_mention：丢弃这个候选值，这一项保持原样不变。
- * 一轮里最多只处理一个待确认冲突（万一同时出现多个，先问排在前面的那个，
- * 其余的候选值这一轮先丢弃，不强行一次性堆多个确认问题）。
+ *
+ * 重要：如果这一轮进来时已经有一个待确认事项（state.pendingConfirmation
+ * 非空，说明上一轮的确认还没解决），这一轮不再叠加产生第二个待确认——
+ * 新出现的 correction 候选值直接丢弃（等旧的确认解决后，用户如果还想
+ * 改，之后自然还有机会再说一次），避免用户同时面对两个待澄清的问题。
+ * 但除了"新冲突"这一件事之外，其余能正常落地的更新（第一次回答、
+ * same_meaning）依然照常处理，不能因为有旧确认在等，就连这些无冲突的
+ * 新信息也一起吞掉。
+ *
+ * 同样重要：只有这一轮真的产生了新冲突时，才会在返回值里带上
+ * pendingConfirmation 这个字段；没有新冲突时完全不碰这个字段（既不
+ * 设置也不清空），让它保持调用前的原样——不然会把 resolvePendingConfirmation
+ * 那边还没解决、特意保留下来的旧待确认事项，被这里误当作"这一轮没有
+ * 冲突"而覆盖成 null，导致那个悬而未决的问题凭空消失。
  */
 async function conflictRouter(state) {
   const lastUserMessage = findLastUserMessage(state.messages);
   const userText = getMessageText(lastUserMessage);
   const focusLabel = state.lastAskedSlot ? SLOT_LABELS[state.lastAskedSlot] : '（没有明确针对某一项）';
+  const hasExistingPending = Boolean(state.pendingConfirmation);
 
   const slotUpdates = {};
   let firstConflict = null;
@@ -98,17 +111,23 @@ async function conflictRouter(state) {
 
     if (classification === 'same_meaning') {
       slotUpdates[key] = { value: candidate, confirmed: true };
-    } else if (classification === 'correction' && !firstConflict) {
+    } else if (classification === 'correction' && !firstConflict && !hasExistingPending) {
       firstConflict = { field: key, oldValue: slot.value, newValue: candidate };
     }
     // incidental_mention：什么都不做，丢弃这个候选值
+    // correction 但 hasExistingPending 为真：同样丢弃，避免叠加第二个待确认
   }
 
-  return {
+  const result = {
     slots: slotUpdates,
     candidateSlots: {},
-    pendingConfirmation: firstConflict,
   };
+
+  if (firstConflict) {
+    result.pendingConfirmation = firstConflict;
+  }
+
+  return result;
 }
 
 module.exports = { conflictRouter, classifyPotentialConflict };
