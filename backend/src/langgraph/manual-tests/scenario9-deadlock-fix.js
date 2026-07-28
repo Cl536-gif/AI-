@@ -114,6 +114,10 @@ async function runCase({
   }
 
   // 阶段C：重新提起之前被丢弃的信息，必须能被正常记录（不能再是"什么都没发生"）
+  // 注意：如果某一次重提本身触发了"进入新的待确认流程"，在测下一个字段的
+  // 重提之前，必须先像真实对话一样把这个新待确认解决掉——不然下一次重提
+  // 会被"不叠加第二个待确认"这条规则挡住，那测的就不是"残留状态"，而是
+  // 单纯没让上一个新待确认走完流程，跟真实对话逻辑不符。
   for (let i = 0; i < reproTurns.length; i += 1) {
     const message = reproTurns[i];
     const field = reproFields[i];
@@ -135,6 +139,20 @@ async function runCase({
       console.log(`✅ ${field} 这次被正常自动确认了: ${afterSlot}`);
     } else if (gotQueuedForConfirmation) {
       console.log(`✅ ${field} 这次正常进入了新的待确认流程（不是自动确认，但也不是被丢弃）: ${JSON.stringify(state.pendingConfirmation)}`);
+
+      // 这次重提自己生成了一个新的待确认事项，如果后面还有别的字段要
+      // 重提，必须先把这个新待确认正常解决掉，模拟真实对话里用户会先
+      // 回应这个确认问题，再继续聊别的
+      if (i < reproTurns.length - 1) {
+        console.log(`--- （先正常回应一下这个新产生的 ${field} 确认问题，再继续测下一个字段） ---`);
+        // eslint-disable-next-line no-await-in-loop
+        state = await sendTurn(state, '对，没错');
+        printState('[确认新待确认]', state);
+        if (state.pendingConfirmation) {
+          console.log(`❌ 期望这个新产生的待确认（${field}）被"对，没错"解决掉，但实际仍是: ${JSON.stringify(state.pendingConfirmation)}`);
+          stepOk = false;
+        }
+      }
     }
   }
 
