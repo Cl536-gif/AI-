@@ -54,7 +54,7 @@ async function main() {
     if (data.isComplete) {
       console.log('\n>>> 六项信息已全部确认，这一轮应该是 generatePlan 出的方案，重点检查以下几点：');
       console.log('    1. 有没有主动推荐大众化菜品（不是健身向/小众菜品）');
-      console.log('    2. 分量描述是不是生活化类比（"一圈米饭""一掌蔬菜"），不是精确克数');
+      console.log('    2. 分量描述是不是生活化类比（"一拳米饭""一掌蔬菜"），不是精确克数');
       console.log('    3. 每道菜有没有带"如果食堂没有，换成XX"这类替代方案（第43条，这次重点）');
       console.log('    4. 举例有没有过度细化到具体口味/品类');
       console.log('    5. 格式上有没有markdown加粗/列表符号/emoji/英文字母/排比反问句');
