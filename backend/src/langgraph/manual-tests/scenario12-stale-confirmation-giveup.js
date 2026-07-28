@@ -64,9 +64,17 @@ async function main() {
   console.log('\n\n=== 核对 ===');
   let ok = true;
 
-  if (state.pendingConfirmation) {
-    console.log(`❌ 期望3轮之后 pendingConfirmation 已经被放弃清空，但实际仍是: ${JSON.stringify(state.pendingConfirmation)}`);
+  // 注意：放弃restrictions这个确认之后，第3轮"不运动"因为不是
+  // lastAskedSlot，会按设计正常进入它自己新的确认流程（exercise的
+  // pendingConfirmation）——这是正确行为，不代表又卡住了。真正要检查
+  // 的是：pendingConfirmation不能还停留在旧的restrictions上（那才是
+  // 卡住），如果是一个新的、field不同、askedCount很低的待确认，说明
+  // 流程已经恢复正常、重新开始了一轮新的确认周期。
+  if (state.pendingConfirmation && state.pendingConfirmation.field === 'restrictions') {
+    console.log(`❌ 期望旧的restrictions确认已经被放弃，但实际还停留在它上面: ${JSON.stringify(state.pendingConfirmation)}`);
     ok = false;
+  } else if (state.pendingConfirmation) {
+    console.log(`✅ restrictions确认已放弃，当前是一个全新的待确认事项（${state.pendingConfirmation.field}，askedCount=${state.pendingConfirmation.askedCount}），流程恢复正常，不是卡在原地`);
   } else {
     console.log('✅ 3轮之后 pendingConfirmation 已经被自动放弃清空，没有无限期卡住');
   }
