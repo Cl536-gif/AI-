@@ -21,11 +21,58 @@
 // state.isComplete 在这一轮必然是 false），生成的回复文本如果命中
 // "声称六项已确认完毕"或者"直接给出组合菜品方案"这类模式，一律判定
 // 为矛盾，走跟 formatGuard 一样的重新生成流程，不依赖模型自觉。
+//
+// 真实测试里陆续观察到三种不同的规避方式（甩完整菜单 -> 说"确认完毕" ->
+// 把六项当既成事实列出来+问一句无关的"午餐还是晚餐"），第三种甚至没有
+// 被下面这套文字模式命中，还连累到后面 generatePlan 那一轮直接continue
+// 了这句无关提问、真的没给出方案。继续靠"再枚举一种新说法"来堵，大概率
+// 还会有第四种——所以在 PREMATURE_PLAN_PATTERNS 这套已验证有效的快速
+// 正则之外，加了 checkAsksTargetSlot 这道更根本的语义检测：不管模型这一
+// 轮具体怎么措辞，只判断一件事——这段回复里有没有真的针对 nextSlotToAsk
+// 这个具体缺失字段提问。只要没有实质提问到这一项，不管是甩方案、说
+// 齐了、还是问了别的无关问题，都判定不合格，不用再一个个去追新的说法。
+const { z } = require('zod');
 const { model } = require('../model');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
 const { generateWithFormatGuard } = require('../../services/formatGuard');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
 const { getMessageRole, getMessageText } = require('../utils/messages');
+
+const targetSlotCheckSchema = z.object({
+  asksAboutTargetSlot: z
+    .boolean()
+    .describe(
+      '这段AI回复有没有实质性地向用户提问/确认"目标字段"的具体内容。不管用什么' +
+        '措辞、语气、话术（哪怕夹在闲聊、共情、举例里），只要这段回复里真的包含' +
+        '一句明确指向目标字段本身的问题，就是true。如果这段回复完全没有针对' +
+        '目标字段提问——比如：直接给出了具体的饮食方案/菜品组合；声称六项信息' +
+        '已经收集完整/都齐了；把目标字段的值当成既成事实直接写出来，却问的是' +
+        '跟目标字段无关的其他问题（比如问预算多少、问打算午餐还是晚餐吃、问' +
+        '要不要现在开始）；或者只是闲聊、没有把话题带回目标字段——都算false。'
+    ),
+});
+
+const targetSlotCheckModel = model.withStructuredOutput(targetSlotCheckSchema, {
+  name: 'check_asks_target_slot',
+});
+
+async function checkAsksTargetSlot(replyText, slotLabel) {
+  const prompt = [
+    {
+      role: 'system',
+      content:
+        '你是一个质检助手，只做一件事：判断下面这段AI回复，有没有实质性地在向' +
+        `用户提问/确认"${slotLabel}"这一项信息。这是唯一的判断标准，不用管回复` +
+        `措辞自然不自然、语气好不好，只关心"这段话里到底有没有一句真正指向` +
+        `"${slotLabel}"这个具体字段的问题"——哪怕回复顺带聊了别的、举了例子、` +
+        '共情了几句，只要最终真的问到了这一项，就算true；哪怕回复读起来很像' +
+        '在收尾确认信息，但实际问的是别的字段、或者压根没提问，就算false。',
+    },
+    { role: 'human', content: replyText },
+  ];
+  const result = await targetSlotCheckModel.invoke(prompt);
+  return result.asksAboutTargetSlot;
+}
 
 const PREMATURE_PLAN_PATTERNS = [
   {
@@ -66,6 +113,23 @@ const PREMATURE_PLAN_PATTERNS = [
 
 function detectPrematurePlan(text) {
   return PREMATURE_PLAN_PATTERNS.filter((p) => p.regex.test(text)).map((p) => ({ type: p.type, detail: p.detail }));
+}
+
+// 正则命中的几类是已经验证过的快速通道，不用等一次模型调用就能拦下来；
+// 但真实测试证明模型总能找到没被枚举到的新说法绕过去，所以这里加上
+// checkAsksTargetSlot 兜底——不管正则有没有命中，都再问一遍"这段话到底
+// 有没有实质问到目标字段"，这条判断跟具体措辞无关，理论上能覆盖所有
+// 未来可能出现的新规避方式，不用再靠不断新增正则去追。
+async function detectAskNextQuestionViolations(text, slotLabel) {
+  const violations = detectPrematurePlan(text);
+  const asksTarget = await checkAsksTargetSlot(text, slotLabel);
+  if (!asksTarget) {
+    violations.push({
+      type: 'not_asking_target_slot',
+      detail: `这段回复没有实质性地问到"${slotLabel}"这一项（不管具体怎么措辞，只要没有真的把话题带回这个字段就算）`,
+    });
+  }
+  return violations;
 }
 
 function buildPrematurePlanRetryInstruction(violations, slotLabel) {
@@ -143,7 +207,8 @@ async function askNextQuestion(state) {
     // eslint-disable-next-line no-await-in-loop
     const result = await generateOnce(extraInstruction);
     replyText = result.text;
-    prematurePlanViolations = detectPrematurePlan(replyText);
+    // eslint-disable-next-line no-await-in-loop
+    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel);
 
     if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
