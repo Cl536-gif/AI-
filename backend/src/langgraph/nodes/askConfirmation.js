@@ -6,12 +6,21 @@
 // pending.oldValue 为 null 时，表示这不是"改口"，而是 AI 本轮没有问、
 // 但 candidateSlots 里意外冒出来的候选值（第一次出现，没有旧值可比较），
 // 这种情况的确认问法跟"改口确认"不一样，要分开处理。
+//
+// askedCount：记录这个待确认事项已经问过几次。真实测试发现，如果用户
+// 一直不正面回应这个确认问题、只是继续往下正常回答别的问题，
+// routeAfterConflictCheck 会一直把每一轮都送回这里，原地重复问同一句
+// 问题，还会连带卡住 lastAskedSlot 的推进，导致后续所有"意外字段"都
+// 被反复丢弃、永远等不到解决——表现跟死锁几乎一样。这个计数是给
+// resolvePendingConfirmation 用的：问过太多次还是没有明确回应，就
+// 应该自动放弃这次确认，把主动权还给对话，不能无限期卡住整个流程。
 const { model } = require('../model');
 const { SLOT_LABELS } = require('../state');
 
 async function askConfirmation(state) {
   const pending = state.pendingConfirmation;
   const isFirstTimeSurprise = pending.oldValue === null;
+  const askedCount = (pending.askedCount || 0) + 1;
 
   const prompt = [
     {
@@ -36,6 +45,7 @@ async function askConfirmation(state) {
 
   return {
     messages: [{ role: 'ai', content: response.content }],
+    pendingConfirmation: { ...pending, askedCount },
   };
 }
 

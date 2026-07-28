@@ -3,9 +3,19 @@
 // 的回答"来解析：同意就把新值真正落地，不同意就维持旧值，两种情况都清空
 // pendingConfirmation；如果回答本身没讲清楚，保留 pendingConfirmation，
 // 让 askConfirmation 再问一次，不能不清不楚地就当作已经解决了。
+//
+// MAX_ASK_COUNT：真实测试发现，如果用户一直不正面回应确认问题、只是
+// 继续正常回答别的问题，这个确认会无限期卡住——routeAfterConflictCheck
+// 每一轮都会送回askConfirmation原地重复问同一句问题，还会连带卡住
+// lastAskedSlot 的推进，导致后续所有"意外字段"都被反复丢弃，表现跟
+// 死锁几乎一样。问过 MAX_ASK_COUNT 次还是没能得到明确回应，就不再
+// 追问，按"放弃这次确认"处理（跟明确否认时一样恢复原状），把主动权
+// 还给对话，让这一轮的真实内容能正常往下走。
 const { z } = require('zod');
 const { model } = require('../model');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
+
+const MAX_ASK_COUNT = 2;
 
 const ResolutionSchema = z.object({
   resolution: z
@@ -51,23 +61,37 @@ async function resolvePendingConfirmation(state) {
     };
   }
 
+  // 意外字段的首次候选值被否认/放弃时，不能落地成 {value: oldValue,
+  // confirmed: true}——oldValue 本来就是 null，那样会把这一项错误地
+  // 标记成"已确认但没有值"，之后再也不会被追问。应该完全恢复成
+  // 从没发生过一样：{value: null, confirmed: false}，等着被正常问到
+  // 或者用户之后再主动提起。
+  const revertSlot = () =>
+    isFirstTimeSurprise
+      ? { value: null, confirmed: false }
+      : { value: pending.oldValue, confirmed: true };
+
   if (resolution === 'rejected') {
-    // 意外字段的首次候选值被否认时，不能落地成 {value: oldValue,
-    // confirmed: true}——oldValue 本来就是 null，那样会把这一项错误地
-    // 标记成"已确认但没有值"，之后再也不会被追问。应该完全恢复成
-    // 从没发生过一样：{value: null, confirmed: false}，等着被正常问到
-    // 或者用户之后再主动提起。
     return {
-      slots: {
-        [pending.field]: isFirstTimeSurprise
-          ? { value: null, confirmed: false }
-          : { value: pending.oldValue, confirmed: true },
-      },
+      slots: { [pending.field]: revertSlot() },
       pendingConfirmation: null,
     };
   }
 
-  // unclear：什么都不改，pendingConfirmation 保留，交给下游再问一次
+  // unclear：如果已经问过太多次还是没能得到明确回应，不再追问，按
+  // "放弃这次确认"处理，避免无限期卡住整个流程；否则保留
+  // pendingConfirmation（同时把 askedCount 带上），交给下游再问一次。
+  if ((pending.askedCount || 0) >= MAX_ASK_COUNT) {
+    if (process.env.LANGGRAPH_DEBUG) {
+      // eslint-disable-next-line no-console
+      console.log(`[resolvePendingConfirmation] ${pending.field} 已经问了${pending.askedCount}次还是不清楚，放弃这次确认，恢复原状`);
+    }
+    return {
+      slots: { [pending.field]: revertSlot() },
+      pendingConfirmation: null,
+    };
+  }
+
   return {};
 }
 
