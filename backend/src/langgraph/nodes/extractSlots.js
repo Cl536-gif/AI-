@@ -77,6 +77,25 @@ const structuredModel = model.withStructuredOutput(extractionSchema, {
   name: 'extract_slots',
 });
 
+// 真实测试里稳定复现过的错误：用户只回了某一项的"类别名称/话题词"本身
+// （比如问预算，用户只回"预算"两个字），模型会把这个词原样当成该字段的
+// 值填进去。这种情况光靠 prompt 描述没能稳定纠正（同一测试连续多次复现），
+// 所以在代码层面做确定性兜底——候选值如果精确匹配这份黑名单，直接当作
+// 无效丢弃，不依赖模型自觉遵守。
+const BARE_LABEL_BLOCKLIST = {
+  scene: ['场景', '就餐场景', '吃饭场景', '就餐场景（食堂/外卖）'],
+  taste: ['口味', '口味偏好', '偏好'],
+  budget: ['预算'],
+  restrictions: ['忌口', '过敏', '忌口过敏', '忌口/过敏'],
+  goal: ['身材目标', '目标', '身材'],
+  exercise: ['运动', '是否运动', '运动情况'],
+};
+
+function isBareLabelEcho(key, value) {
+  if (!value) return false;
+  return (BARE_LABEL_BLOCKLIST[key] || []).includes(value.trim());
+}
+
 function formatKnownSlots(slots) {
   const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
     const slot = slots[key];
@@ -162,9 +181,15 @@ async function extractSlots(state) {
 
   const candidateSlots = {};
   SLOT_KEYS.forEach((key) => {
-    if (extracted[key]) {
-      candidateSlots[key] = extracted[key];
+    if (!extracted[key]) return;
+    if (isBareLabelEcho(key, extracted[key])) {
+      if (process.env.LANGGRAPH_DEBUG) {
+        // eslint-disable-next-line no-console
+        console.log(`[extractSlots] 丢弃了字段名回声候选值: ${key}=${extracted[key]}`);
+      }
+      return;
     }
+    candidateSlots[key] = extracted[key];
   });
 
   if (process.env.LANGGRAPH_DEBUG) {
