@@ -159,11 +159,27 @@ async function askNextQuestion(state) {
     if (prematurePlanViolations.length === 0) break;
   }
 
-  if (process.env.LANGGRAPH_DEBUG) {
-    if (prematurePlanViolations.length > 0) {
+  // 真实测试发现一个比"检测到矛盾"更严重的连锁问题：如果3次重试都没能
+  // 摆脱矛盾，之前的做法是"按最后一次生成结果返回"——这次生成本身还是
+  // 违规的（声称六项已齐、还带着具体菜品方案），一旦它被存进对话历史，
+  // 下一轮模型会看到"自己刚才已经给过方案"这个既成事实，觉得应该顺着
+  // 说下去而不是收回，于是矛盾会在后续每一轮持续复现、越纠正越纠正不
+  // 回来。所以重试耗尽后不能再把这次违规生成放进历史——改成完全跳过
+  // 模型，用一句确定性的模板问题兜底，保证绝不会有"声称已完成/具体
+  // 方案"这类内容混进对话历史，牺牲一次的自然度换取不把矛盾传染给
+  // 后面所有轮次。
+  if (prematurePlanViolations.length > 0) {
+    if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
-      console.log('[askNextQuestion] 重试耗尽仍命中"提前出方案"矛盾，按最后一次生成结果返回:', replyText);
+      console.log(
+        '[askNextQuestion] 重试耗尽仍命中"提前出方案"矛盾，放弃这次生成结果（不能让它混进对话历史），改用确定性兜底问题:',
+        replyText
+      );
     }
+    replyText = `不好意思，刚才有点跑偏了——"${slotLabel}"这一项我还没跟你确认清楚，方便直接告诉我一下吗？`;
+  }
+
+  if (process.env.LANGGRAPH_DEBUG) {
     // eslint-disable-next-line no-console
     console.log(`[askNextQuestion] 问的是: ${nextSlot}`);
     // eslint-disable-next-line no-console
