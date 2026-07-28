@@ -70,6 +70,21 @@ async function classifyPotentialConflict({ slotLabel, oldValue, newValue, focusL
  * 设置也不清空），让它保持调用前的原样——不然会把 resolvePendingConfirmation
  * 那边还没解决、特意保留下来的旧待确认事项，被这里误当作"这一轮没有
  * 冲突"而覆盖成 null，导致那个悬而未决的问题凭空消失。
+ *
+ * 结构性安全防线（对应真实复现过的漏洞：extractSlots 一旦编造/误判出
+ * 候选值，只要对应字段之前"未确认过"，就会被下面这条逻辑无条件标记成
+ * confirmed:true，完全绕过用户确认——"自选"触发五项瞎猜的那次复现，
+ * 五个字段就是这样被瞎猜之后直接锁定成已确认状态的）：
+ * 是否可以跳过确认、直接自动落地，判断标准不是"这个字段是不是第一次
+ * 填"，而是"这个字段是不是用户这一轮正面回答的那一项"——也就是
+ * state.lastAskedSlot。只有 candidate 对应的字段正好是 AI 这一轮主动
+ * 问的那个字段时，才认为风险较低、可以直接自动确认；除此之外，任何
+ * "意外"出现在 candidateSlots 里、AI 根本没问的字段，哪怕是第一次填、
+ * 之前完全没有旧值，也必须走跟"改口"完全一样的确认流程，不能因为
+ * "反正是第一次、没有旧值可覆盖"就放松警惕——这正是漏洞发生的地方。
+ * 这条判断是纯代码逻辑，不依赖模型自己判断"这次是不是在瞎猜"，也不
+ * 依赖已经发现过的具体编造模式（比如"自选"这个词本身），对任何未来
+ * 还没遇到过的新编造模式同样有效。
  */
 async function conflictRouter(state) {
   const lastUserMessage = findLastUserMessage(state.messages);
@@ -85,9 +100,26 @@ async function conflictRouter(state) {
     if (!candidate) continue;
 
     const slot = state.slots[key] || { value: null, confirmed: false };
+    const isFocusSlot = key === state.lastAskedSlot;
 
     if (!slot.confirmed) {
-      slotUpdates[key] = { value: candidate, confirmed: true };
+      if (isFocusSlot) {
+        // AI这一轮主动问的就是这一项，用户是在正面回答问题，风险较低，
+        // 按原逻辑直接确认。
+        slotUpdates[key] = { value: candidate, confirmed: true };
+      } else if (!firstConflict && !hasExistingPending) {
+        // 意外字段：AI这一轮没有问这一项，但 candidateSlots 里却冒出来了。
+        // 哪怕是"第一次填、没有旧值"，也不能无脑自动确认——统一走确认
+        // 流程，oldValue 传 null 表示这不是真的"改口"，是首次出现的
+        // 意外候选值。
+        if (process.env.LANGGRAPH_DEBUG) {
+          // eslint-disable-next-line no-console
+          console.log(`[conflictRouter] ${key} 是意外字段（非lastAskedSlot）且首次出现候选值 "${candidate}"，转入确认流程而不是自动确认`);
+        }
+        firstConflict = { field: key, oldValue: null, newValue: candidate };
+      }
+      // 意外字段但本轮已经有 firstConflict，或已经有旧的 pendingConfirmation
+      // 还没解决：本轮直接丢弃，避免一次性堆叠多个待确认问题。
       continue;
     }
 

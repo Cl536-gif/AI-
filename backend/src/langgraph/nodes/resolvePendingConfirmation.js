@@ -23,6 +23,7 @@ const structuredResolver = model.withStructuredOutput(ResolutionSchema, {
 
 async function resolvePendingConfirmation(state) {
   const pending = state.pendingConfirmation;
+  const isFirstTimeSurprise = pending.oldValue === null;
   const lastUserMessage = findLastUserMessage(state.messages);
   const userText = getMessageText(lastUserMessage);
 
@@ -30,8 +31,12 @@ async function resolvePendingConfirmation(state) {
     {
       role: 'system',
       content:
-        `之前问了用户一个确认问题，大意是："你之前说的是${pending.oldValue}，` +
-        `现在是想改成${pending.newValue}吗？"请判断用户这一轮的回复是同意` +
+        (isFirstTimeSurprise
+          ? '之前问了用户一个确认问题，大意是：从你刚才的话里，好像顺带' +
+            `提取到了"${pending.newValue}"这个信息，这样理解对吗？`
+          : `之前问了用户一个确认问题，大意是："你之前说的是${pending.oldValue}，` +
+            `现在是想改成${pending.newValue}吗？"`) +
+        '请判断用户这一轮的回复是同意' +
         '（confirmed）、否认（rejected），还是没有明确回应（unclear）。',
     },
     { role: 'human', content: userText },
@@ -47,8 +52,17 @@ async function resolvePendingConfirmation(state) {
   }
 
   if (resolution === 'rejected') {
+    // 意外字段的首次候选值被否认时，不能落地成 {value: oldValue,
+    // confirmed: true}——oldValue 本来就是 null，那样会把这一项错误地
+    // 标记成"已确认但没有值"，之后再也不会被追问。应该完全恢复成
+    // 从没发生过一样：{value: null, confirmed: false}，等着被正常问到
+    // 或者用户之后再主动提起。
     return {
-      slots: { [pending.field]: { value: pending.oldValue, confirmed: true } },
+      slots: {
+        [pending.field]: isFirstTimeSurprise
+          ? { value: null, confirmed: false }
+          : { value: pending.oldValue, confirmed: true },
+      },
       pendingConfirmation: null,
     };
   }
