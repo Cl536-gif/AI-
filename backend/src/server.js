@@ -4,6 +4,7 @@ const cors = require('cors');
 const config = require('./config');
 const chatRouter = require('./routes/chat');
 const chatLocalRouter = require('./routes/chatLocal');
+const chatLanggraphRouter = require('./routes/chatLanggraph');
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/chat', chatRouter);
 app.use('/api/chat-local', chatLocalRouter);
+app.use('/api/chat-langgraph', chatLanggraphRouter);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 

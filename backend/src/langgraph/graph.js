@@ -1,7 +1,7 @@
-// 状态图：目前接到"提问"这一段。generatePlan、consistencyCheck 还
-// 没实现，暂时先在 checkCompleteness 判断"信息已完整"的分支直接结束
-// 这一轮（这个分支目前还不会生成回复文本，等 generatePlan 做好后
-// 把对应的 '__end__' 换成 'generatePlan' 即可）。
+// 状态图：六项信息采集 + 出方案的完整闭环已经接通。consistencyCheck
+// （场景值矛盾自查）还没实现，暂时不影响主流程——generatePlan 出的
+// 方案已经接了 formatGuard 兜底，consistencyCheck 属于额外的、更细
+// 的场景值一致性检查，后续视情况再补。
 const { StateGraph } = require('@langchain/langgraph');
 const { DietState } = require('./state');
 const { extractSlots } = require('./nodes/extractSlots');
@@ -10,6 +10,7 @@ const { askConfirmation } = require('./nodes/askConfirmation');
 const { resolvePendingConfirmation } = require('./nodes/resolvePendingConfirmation');
 const { checkCompleteness } = require('./nodes/checkCompleteness');
 const { askNextQuestion } = require('./nodes/askNextQuestion');
+const { generatePlan } = require('./nodes/generatePlan');
 
 function routeEntry(state) {
   return state.pendingConfirmation ? 'resolvePendingConfirmation' : 'extractSlots';
@@ -27,10 +28,6 @@ function routeAfterConflictCheck(state) {
 }
 
 function routeAfterCompleteness(state) {
-  // 占位：askNextQuestion / generatePlan 还没实现，两条分支暂时都先
-  // 结束这一轮；等对应节点做好后，把下面路径表里的 '__end__' 换成
-  // 'askNextQuestion' / 'generatePlan' 即可，routeAfterCompleteness
-  // 本身的判断逻辑不用改。
   return state.isComplete ? 'generatePlan' : 'askNextQuestion';
 }
 
@@ -41,6 +38,7 @@ const workflow = new StateGraph(DietState)
   .addNode('askConfirmation', askConfirmation)
   .addNode('checkCompleteness', checkCompleteness)
   .addNode('askNextQuestion', askNextQuestion)
+  .addNode('generatePlan', generatePlan)
   .addConditionalEdges('__start__', routeEntry, {
     resolvePendingConfirmation: 'resolvePendingConfirmation',
     extractSlots: 'extractSlots',
@@ -56,12 +54,17 @@ const workflow = new StateGraph(DietState)
   })
   .addConditionalEdges('checkCompleteness', routeAfterCompleteness, {
     askNextQuestion: 'askNextQuestion',
-    // 占位：还没有 generatePlan 节点，先指向 __end__
-    generatePlan: '__end__',
+    generatePlan: 'generatePlan',
   })
   .addEdge('askNextQuestion', '__end__')
+  .addEdge('generatePlan', '__end__')
   .addEdge('askConfirmation', '__end__');
 
 const graph = workflow.compile();
 
-module.exports = { graph };
+// 也导出还没 compile 的 workflow，方便路由层用带 checkpointer 的方式
+// 重新 compile 一份（服务端要靠 checkpointer + threadId 维护多轮状态，
+// 而这里现成的 graph 是不带 checkpointer 的裸版本，manual-tests 里的
+// 脚本都是手动在调用方自己传状态，不需要 checkpointer，两种用法并存、
+// 互不影响）。
+module.exports = { graph, workflow };
