@@ -72,8 +72,16 @@ async function isServerUp() {
 
 function runScript(scriptPath, cwd) {
   const started = Date.now();
+  // 每个场景脚本头部注释里写的运行方式都是"cd backend && node ..."——
+  // 有些脚本（比如老架构走的 config.js）用的是不带路径参数的裸
+  // `dotenv.config()`，这个调用是按 process.cwd() 找 .env 的，不是按
+  // 脚本文件自己的路径找。之前这里误把默认 cwd 设成了 manual-tests
+  // 这一层目录，导致 dotenv 在错误的目录下找不到 backend/.env，
+  // BAILIAN_API_KEY 读成空——不是真的环境没配置好，是这个编排脚本自己
+  // 传错了子进程的工作目录。统一固定成 BACKEND_DIR，跟每个脚本自己
+  // 文档里写的运行方式保持一致。
   const result = spawnSync('node', [scriptPath], {
-    cwd: cwd || MANUAL_TESTS_DIR,
+    cwd: cwd || BACKEND_DIR,
     encoding: 'utf8',
     env: process.env,
     maxBuffer: 1024 * 1024 * 50,
