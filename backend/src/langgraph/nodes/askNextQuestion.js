@@ -10,11 +10,61 @@
 // 好了，不用自己判断六项采集进度、不用自己决定问题顺序"——避免模型
 // 看到完整提示词里第1/4/20/24/32/40条这些"六项采集流程"相关规则后，
 // 又自己重新判断一遍进度，跟状态机的决定打架。
+//
+// 真实测试发现：光靠 taskInstruction 里"严格禁止提前出方案"这句话，
+// 在长对话历史下（10+轮，尤其是经历过几轮确认/待确认循环之后）还是
+// 会失守——模型会在明明 checkCompleteness 判定"还没收集完"的情况下，
+// 生成"六项信息确认完毕"之类的措辞，并且直接给出具体菜品+分量的完整
+// 方案。这是"AI输出跟状态机真实判断矛盾"，跟"场景值前后矛盾""编造
+// 用户原话"是同一类严重程度的问题，不能只靠继续加强提示词措辞——
+// 这次改成代码层面的确定性检测：只要 askNextQuestion 被调用（也就是
+// state.isComplete 在这一轮必然是 false），生成的回复文本如果命中
+// "声称六项已确认完毕"或者"直接给出组合菜品方案"这类模式，一律判定
+// 为矛盾，走跟 formatGuard 一样的重新生成流程，不依赖模型自觉。
 const { model } = require('../model');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
 const { generateWithFormatGuard } = require('../../services/formatGuard');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
 const { getMessageRole, getMessageText } = require('../utils/messages');
+
+const PREMATURE_PLAN_PATTERNS = [
+  {
+    type: 'claims_complete',
+    regex: /六项(信息)?[^。！？\n]{0,10}(确认完(毕)?|收集(齐|全)了?|集齐|对齐(啦|了)?|(就|都)齐(啦|了)?|都(了解|清楚|问完|齐全)(到|啦|了)?)/,
+    detail: '声称"六项信息确认完毕/收集齐/对齐/齐啦"这类措辞',
+  },
+  {
+    type: 'dish_combo_marker',
+    regex: /[＋+]/,
+    detail: '用"＋"把多道菜组合成一份方案（generatePlan才该做的事）',
+  },
+  {
+    type: 'plan_feedback_prompt',
+    regex: /(你觉得(这[个顿套餐份方案])?(怎么样|如何)?[？?]|想调整哪部分|要不要换一个|不爱吃\/?没有的话，?直接说换一个)/,
+    detail: '像是在等用户对一份已经给出的具体方案做反馈',
+  },
+  {
+    type: 'substitute_dish_phrase',
+    regex: /(如果食堂没有|要是食堂(今天)?没有)[^。！？\n]*换成/,
+    detail: '出现了第43条"食堂没有就换成XX"这类只有出方案时才该有的替代方案话术',
+  },
+];
+
+function detectPrematurePlan(text) {
+  return PREMATURE_PLAN_PATTERNS.filter((p) => p.regex.test(text)).map((p) => ({ type: p.type, detail: p.detail }));
+}
+
+function buildPrematurePlanRetryInstruction(violations, slotLabel) {
+  const parts = violations.map((v, i) => `${i + 1}. ${v.detail}`).join('\n');
+  return (
+    '上一次生成的内容有严重问题，必须重新生成：外部状态机已经明确判定这一轮' +
+    `信息还没收集完（还差"${slotLabel}"这一项），但上一次的回复却出现了以下` +
+    `跟这个判断矛盾的内容：\n${parts}\n这一轮唯一的任务是自然地问出` +
+    `"${slotLabel}"这一项，绝对不能声称六项已经收集完、不能给出任何具体的` +
+    '菜品组合方案、不能用"你觉得这个方案怎么样"这类语气收尾——这些都是出方案' +
+    '环节该做的事，这一轮完全不适用，请重新生成一版单纯的提问。'
+  );
+}
 
 function formatKnownSlots(slots) {
   const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
@@ -48,21 +98,58 @@ async function askNextQuestion(state) {
     .filter((m) => getMessageRole(m) === 'human')
     .map((m) => getMessageText(m));
 
-  const { text: replyText } = await generateWithFormatGuard({
-    userMessages,
-    generate: async (retryInstruction) => {
-      const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'system', content: taskInstruction },
-        ...(retryInstruction ? [{ role: 'system', content: `【重新生成要求】${retryInstruction}` }] : []),
-        ...state.messages,
-      ];
-      const response = await model.invoke(messages);
-      return response.content;
-    },
-  });
+  async function generateOnce(prematurePlanInstruction) {
+    return generateWithFormatGuard({
+      userMessages,
+      generate: async (retryInstruction) => {
+        const messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: taskInstruction },
+          ...(prematurePlanInstruction ? [{ role: 'system', content: `【重新生成要求】${prematurePlanInstruction}` }] : []),
+          ...(retryInstruction ? [{ role: 'system', content: `【重新生成要求】${retryInstruction}` }] : []),
+          ...state.messages,
+        ];
+        const response = await model.invoke(messages);
+        return response.content;
+      },
+    });
+  }
+
+  // "提前出方案"这类矛盾单独用一层重试包住 generateWithFormatGuard——
+  // 这不是格式问题，是回复内容跟外部状态机的真实判断矛盾，检测逻辑
+  // 需要知道 slotLabel/nextSlot 这些跟这个节点强相关的信息，不适合
+  // 塞进跟具体链路解耦的 formatGuard 里，所以单独在这里做。
+  let replyText = '';
+  let prematurePlanViolations = [];
+  const MAX_PREMATURE_PLAN_RETRIES = 2;
+
+  for (let attempt = 0; attempt <= MAX_PREMATURE_PLAN_RETRIES; attempt += 1) {
+    const extraInstruction =
+      attempt === 0 ? null : buildPrematurePlanRetryInstruction(prematurePlanViolations, slotLabel);
+    // eslint-disable-next-line no-await-in-loop
+    const result = await generateOnce(extraInstruction);
+    replyText = result.text;
+    prematurePlanViolations = detectPrematurePlan(replyText);
+
+    if (process.env.LANGGRAPH_DEBUG) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[askNextQuestion] 第${attempt + 1}次生成${
+          prematurePlanViolations.length === 0
+            ? '没有提前出方案矛盾'
+            : `命中"提前出方案"矛盾: ${prematurePlanViolations.map((v) => v.type).join(', ')}`
+        }`
+      );
+    }
+
+    if (prematurePlanViolations.length === 0) break;
+  }
 
   if (process.env.LANGGRAPH_DEBUG) {
+    if (prematurePlanViolations.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log('[askNextQuestion] 重试耗尽仍命中"提前出方案"矛盾，按最后一次生成结果返回:', replyText);
+    }
     // eslint-disable-next-line no-console
     console.log(`[askNextQuestion] 问的是: ${nextSlot}`);
     // eslint-disable-next-line no-console
