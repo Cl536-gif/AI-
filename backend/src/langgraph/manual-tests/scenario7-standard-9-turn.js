@@ -9,7 +9,12 @@
 //   cd backend && node src/langgraph/manual-tests/scenario7-standard-9-turn.js
 const BASE_URL = process.env.CHAT_LANGGRAPH_URL || 'http://localhost:3001/api/chat-langgraph';
 
-const TURNS = ['你好', '靠谱吗', '食堂', '自选', '偏辣', '忌口', '预算', '身材目标', '不运动'];
+// 后三项（忌口/预算/身材目标）原本写的是话题词本身（"忌口""预算"
+// "身材目标"），这是给旧的单轮生成架构准备的偷懒写法。extractSlots
+// 现在已经加了黑名单，会正确拒绝这种"只复述字段名、没有具体内容"的
+// 回答，所以这里换成真实、具体的回答，才能让六项正常走完、触发
+// generatePlan。
+const TURNS = ['你好', '靠谱吗', '食堂', '自选', '偏辣', '不吃香菜', '20元左右', '穿衣更好看', '不运动'];
 
 let threadId;
 
