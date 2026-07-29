@@ -8,6 +8,7 @@ const { parseKbArg, resolveKbPaths } = require('./kbPaths');
 const { kbName } = parseKbArg(process.argv.slice(2));
 const { docsDir: KB_DOCS_DIR, indexDir: INDEX_DIR } = resolveKbPaths(kbName);
 const MAX_CHUNK_CHARS = Number(process.env.KB_CHUNK_CHARS) || 500;
+const MIN_LEAD_CHARS = Number(process.env.KB_CHUNK_MIN_LEAD_CHARS) || 200;
 const EMBED_BATCH_SIZE = 16;
 
 async function main() {
@@ -23,7 +24,7 @@ async function main() {
 
   const allChunks = [];
   for (const doc of docs) {
-    const chunks = chunkText(doc.text, { maxChunkChars: MAX_CHUNK_CHARS });
+    const chunks = chunkText(doc.text, { maxChunkChars: MAX_CHUNK_CHARS, minLeadChars: MIN_LEAD_CHARS });
     chunks.forEach((text, chunkIndex) => {
       allChunks.push({ text, source: doc.fileName, chunkIndex });
     });
