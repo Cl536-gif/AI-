@@ -242,6 +242,13 @@ async function askNextQuestion(state) {
             : `命中"提前出方案"矛盾: ${prematurePlanViolations.map((v) => v.type).join(', ')}`
         }`
       );
+      // 之前这里只打印了违规类型，没打印当次生成的完整文本——诊断"生成
+      // 阶段偶尔漏问必答问题"这类问题时，只有最后一次（重试耗尽或者
+      // 成功那次）的文本会在别处被打印出来，中间几次实际生成了什么完全
+      // 看不到，没法判断失败样本有没有共同结构。每次都打印完整文本，
+      // 不管这次成功还是命中违规。
+      // eslint-disable-next-line no-console
+      console.log(`[askNextQuestion] 第${attempt + 1}次生成的完整文本:`, replyText);
     }
 
     if (prematurePlanViolations.length === 0) break;
