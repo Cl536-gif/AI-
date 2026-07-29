@@ -96,6 +96,23 @@ function isBareLabelEcho(key, value) {
   return (BARE_LABEL_BLOCKLIST[key] || []).includes(value.trim());
 }
 
+// 真实测试里稳定复现过的另一种错误（5次里5次都复现，不是偶发）：
+// 用户在零上下文的情况下只回一个孤立数字（比如就打了个"20"，上一轮
+// AI根本没问预算，对话历史也完全没聊过预算），budget 的 schema 描述
+// 里已经明确写了"没有语境支撑就不能填"，但模型还是会把孤立数字硬猜
+// 成预算——这跟字段名回声是同一类"光靠 prompt 描述没能稳定纠正"的
+// 问题，用同样的思路做代码层面确定性兜底：如果用户这一轮的原始消息
+// 掐头去尾之后就是一个孤立数字（没有任何"元""块""预算"这类附带
+// 词），且上一轮 AI 问的不是预算本身，那不管模型抽取出了什么，budget
+// 候选值一律丢弃，不依赖模型自觉遵守这条边界。
+const BARE_NUMBER_REGEX = /^\d+(\.\d+)?$/;
+
+function isUnsupportedBareNumberBudgetGuess(key, userText, lastAskedSlot) {
+  if (key !== 'budget') return false;
+  if (lastAskedSlot === 'budget') return false; // 上一轮就是在问预算，这是合理语境
+  return BARE_NUMBER_REGEX.test(userText.trim());
+}
+
 function formatKnownSlots(slots) {
   const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
     const slot = slots[key];
@@ -190,6 +207,13 @@ async function extractSlots(state) {
       if (process.env.LANGGRAPH_DEBUG) {
         // eslint-disable-next-line no-console
         console.log(`[extractSlots] 丢弃了字段名回声候选值: ${key}=${extracted[key]}`);
+      }
+      return;
+    }
+    if (isUnsupportedBareNumberBudgetGuess(key, userText, state.lastAskedSlot)) {
+      if (process.env.LANGGRAPH_DEBUG) {
+        // eslint-disable-next-line no-console
+        console.log(`[extractSlots] 丢弃了零上下文孤立数字硬猜出的候选值: ${key}=${extracted[key]}`);
       }
       return;
     }
