@@ -5,6 +5,18 @@
 // 连续3次生成都命中了"是……还是……"排比句违规，这次看 LangGraph
 // 这边在同样的场景下表现是否一致。
 //
+// 后续更新（完整回归测试时复查）：这条历史违规现在在新老两条架构上
+// 都已经不再复现了。定位下来大概率是 bfc73d6（"新增formatGuard.js
+// 通用格式兜底机制，接入localChatService和askNextQuestion"，2026-07-27）
+// 这次改动带来的效果——它把"是……还是……"排比句纳入了
+// detectFormatViolations 的确定性检测（parallel_question类型），
+// 命中就自动带着具体问题重试，上限2次，同时接入了 localChatService.js
+// 和 askNextQuestion.js 这两条链路。这不是靠改提示词措辞碰巧修好的
+// （rule 14"禁止排比反问句式"这条规则本身从项目早期就存在，一直没变），
+// 是代码层面的确定性拦截生效了。以后如果这条bug复发，优先去查
+// formatGuard.js 的 parallel_question 检测逻辑或它的接入点，而不是
+// 去改 systemPrompt.js 里的措辞。
+//
 // 运行：cd backend && FORMAT_GUARD_DEBUG=1 node src/langgraph/manual-tests/scenario6-same-input-comparison.js
 const { askNextQuestion } = require('../nodes/askNextQuestion');
 const { createInitialSlots } = require('../state');

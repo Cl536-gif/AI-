@@ -4,6 +4,16 @@
 // 变美"这种），对应 systemPrompt.js 第36条"中性开场铁律"和第42条
 // "禁止编造用户原话铁律"。
 //
+// 已知观察（完整回归测试时记录，暂不处理）：askNextQuestion 里
+// checkAsksTargetSlot 这道语义检测偶尔会把这种最简单的首轮开场白
+// （"你好"->问候+顺势问scene）连续3次误判成"没有实质问到目标字段"，
+// 触发确定性兜底模板（"不好意思，刚才有点跑偏了……"），而不是自然的
+// 开场白——编造检查依然是通过的（没编造用户诉求），但用户看到的第一句
+// 话变成了更生硬的兜底话术。这是"正确性优先于自然度"这个既有取舍的
+// 一次具体体现，不是新bug。如果以后要专门优化这道语义检测的误判率，
+// 首轮开场白这类场景应该优先于对话中段的误判去处理，因为它影响的是
+// 用户的第一印象，比中途出现一次更显眼。
+//
 // 运行：cd backend && node src/langgraph/manual-tests/scenario5-first-turn-no-fabrication.js
 const { askNextQuestion } = require('../nodes/askNextQuestion');
 const { createInitialSlots } = require('../state');

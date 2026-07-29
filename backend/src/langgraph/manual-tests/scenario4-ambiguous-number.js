@@ -10,21 +10,47 @@
 // 而不是随便挑一项瞎猜。这样后续 askNextQuestion 就会正常按原计划
 // 继续问该问的那一项，相当于变相达成"没有被这个孤立数字带偏"的效果。
 //
+// 完整回归测试时复现过一次失败（被硬猜成了budget="20元左右"）——
+// extractSlots.js 这次完全没被改动过，怀疑是 model.js 里
+// temperature:0.7 带来的随机性正好撞在这种边界判断上，不是新引入的
+// 回归。改成跑5次、统计命中率，跟 scenario10 用的是同一个方法，确认
+// 这是稳定复现还是偶发。
+//
 // 运行：cd backend && node src/langgraph/manual-tests/scenario4-ambiguous-number.js
 const { extractSlots } = require('../nodes/extractSlots');
 const { createInitialSlots } = require('../state');
 
-async function main() {
-  console.log('=== 用户在没有任何上下文铺垫的情况下，突然只说了"20" ===');
+async function runOnce(round) {
   const result = await extractSlots({
     messages: [{ role: 'human', content: '20' }],
     slots: createInitialSlots(),
     lastAskedSlot: null, // 关键：没有任何"上一轮问的是什么"这个线索
   });
 
-  console.log('抽取到的候选值:', JSON.stringify(result.candidateSlots));
-  console.log('\n--- 预期：candidateSlots 应该是空对象 {}（六项都填了null，没有强行' +
-    '把"20"归到某一项），不应该出现任何一项被硬猜成"20" ---');
+  const isEmpty = Object.keys(result.candidateSlots || {}).length === 0;
+  console.log(`第${round}次 -> candidateSlots:`, JSON.stringify(result.candidateSlots));
+  console.log(isEmpty ? '✅ 正确保持为空（没有瞎猜）' : '❌ 硬猜了某一项（复现了问题）');
+  return isEmpty;
+}
+
+async function main() {
+  console.log('=== 用户在没有任何上下文铺垫的情况下，突然只说了"20"（连续跑5次） ===\n');
+
+  const results = [];
+  for (let i = 1; i <= 5; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await runOnce(i));
+  }
+
+  const passCount = results.filter(Boolean).length;
+  console.log(`\n=== 总结：5次里有 ${passCount} 次正确保持为空 ===`);
+  if (passCount === 5) {
+    console.log('稳定通过，之前那次应该是偶发的模型随机性，不用特别处理。');
+  } else if (passCount === 0) {
+    console.log('稳定复现失败，需要针对性修复（budget字段的语境判断描述可能不够强）。');
+  } else {
+    console.log(`不稳定，命中率${passCount}/5，说明这是个真实存在但不是每次都触发的边界问题，建议后续加固。`);
+  }
 }
 
 main().catch((err) => {
