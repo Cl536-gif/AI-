@@ -155,7 +155,36 @@ async function detectAskNextQuestionViolations(text, slotLabel) {
   return violations;
 }
 
-function buildPrematurePlanRetryInstruction(violations, slotLabel) {
+// 诊断"首轮开场白偶尔漏问必答问题"这个具体案例时，用完整文本调试
+// 日志跑了12轮，发现不是随机噪音：命中 not_asking_target_slot 的
+// 文本，字符对字符全是同一句——systemPrompt.js第36条"中性开场铁律"
+// 里给的示例原句"你好呀～最近有在关注饮食或身材管理方面的事吗？"。
+// 模型把这句示例原样抄下来当成完整回复就停住了，没意识到这只是
+// 示例的前半句，后面必须紧接着问出目标字段。3次触发兜底模板的
+// 轮次，3次重试生成的都是这句一模一样的短句——说明泛泛的"请重新
+// 生成"这个通用指令，对这种"抄示例抄上瘾"的情况没什么纠正力度，
+// 需要专门点破"这是抄了示例、没接上必答问题"，比通用retry指令更
+// 精准。第36条示例文字本身也已经改成带上后续过渡句+场景问题的
+// 完整段落（见 systemPrompt.js），这里是配套的第二层兜底——万一
+// 提示词层面没完全根治，重试阶段还能针对性纠正一次。
+const KNOWN_HALF_OPENER_REGEX = /^你好呀[～~][^。！？\n]*关注饮食或身材管理方面的事(吗|呢)[？?]$/;
+
+function isKnownHalfOpener(text) {
+  return KNOWN_HALF_OPENER_REGEX.test(text.trim());
+}
+
+function buildPrematurePlanRetryInstruction(violations, slotLabel, previousReplyText) {
+  if (previousReplyText && isKnownHalfOpener(previousReplyText)) {
+    return (
+      `上一次生成的内容"${previousReplyText}"，只是systemPrompt里第36条"中性开场"` +
+      '举例用的前半句，你把这句示例原样当成了一句完整回复、说完就停住了——这句话' +
+      '本身只是"怎么中性接话、不替用户编造诉求"这一个点的示范，不是一句独立、说完' +
+      `就算完整回复的话。这一轮必须在这句话后面紧接着往下说完过渡句，再问出` +
+      `"${slotLabel}"这一项，不能只停在开场问候这一句就结束，重新生成一版包含完整` +
+      '过渡+提问的段落。'
+    );
+  }
+
   const parts = violations.map((v, i) => `${i + 1}. ${v.detail}`).join('\n');
   return (
     '上一次生成的内容有严重问题，必须重新生成：外部状态机已经明确判定这一轮' +
@@ -226,7 +255,7 @@ async function askNextQuestion(state) {
 
   for (let attempt = 0; attempt <= MAX_PREMATURE_PLAN_RETRIES; attempt += 1) {
     const extraInstruction =
-      attempt === 0 ? null : buildPrematurePlanRetryInstruction(prematurePlanViolations, slotLabel);
+      attempt === 0 ? null : buildPrematurePlanRetryInstruction(prematurePlanViolations, slotLabel, replyText);
     // eslint-disable-next-line no-await-in-loop
     const result = await generateOnce(extraInstruction);
     replyText = result.text;
