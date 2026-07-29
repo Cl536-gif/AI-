@@ -2,7 +2,7 @@
 // 这是其他节点（冲突检测、完整性判断、出方案）的基础——只有先把
 // "这一轮用户到底说了什么"结构化抽取出来，后面的状态更新/路由才有依据。
 const { z } = require('zod');
-const { model } = require('../model');
+const { classifierModel } = require('../model');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
 
@@ -73,7 +73,7 @@ const extractionSchema = z.object({
     ),
 });
 
-const structuredModel = model.withStructuredOutput(extractionSchema, {
+const structuredModel = classifierModel.withStructuredOutput(extractionSchema, {
   name: 'extract_slots',
 });
 

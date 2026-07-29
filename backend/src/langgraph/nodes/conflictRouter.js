@@ -4,7 +4,7 @@
 // AI直接沿用旧信息"这个bug）——后两种都要正常处理掉，不能让这个节点
 // 太敏感，把无关的顺嘴提及也当成需要确认的冲突，制造新的啰嗦问题。
 const { z } = require('zod');
-const { model } = require('../model');
+const { classifierModel } = require('../model');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
 
@@ -21,7 +21,7 @@ const ClassificationSchema = z.object({
   reason: z.string().describe('用一句话简单说明为什么这么判断，方便调试排查。'),
 });
 
-const structuredClassifier = model.withStructuredOutput(ClassificationSchema, {
+const structuredClassifier = classifierModel.withStructuredOutput(ClassificationSchema, {
   name: 'classify_conflict',
 });
 

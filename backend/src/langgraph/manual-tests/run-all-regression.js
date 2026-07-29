@@ -38,6 +38,7 @@ const SCRIPTS = [
   { file: 'scenario4-ambiguous-number.js', needsServer: false, needsNetwork: true },
   { file: 'scenario8-scene-false-trigger.js', needsServer: false, needsNetwork: true },
   { file: 'scenario10-goal-extraction-check.js', needsServer: false, needsNetwork: true },
+  { file: 'scenario15-classifier-temperature-repeat-check.js', needsServer: false, needsNetwork: true },
   { file: 'scenario1-correction.js', needsServer: false, needsNetwork: true },
   { file: 'scenario2-incidental.js', needsServer: false, needsNetwork: true },
   { file: 'scenario9-deadlock-fix.js', needsServer: false, needsNetwork: true },

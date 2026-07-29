@@ -32,7 +32,7 @@
 // 这个具体缺失字段提问。只要没有实质提问到这一项，不管是甩方案、说
 // 齐了、还是问了别的无关问题，都判定不合格，不用再一个个去追新的说法。
 const { z } = require('zod');
-const { model } = require('../model');
+const { model, classifierModel } = require('../model');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
 const { generateWithFormatGuard } = require('../../services/formatGuard');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
@@ -65,7 +65,13 @@ const targetSlotCheckSchema = z.object({
     ),
 });
 
-const targetSlotCheckModel = model.withStructuredOutput(targetSlotCheckSchema, {
+// 这是分类型判断（回复里有没有一句问到目标字段的疑问句），跟下面
+// generateOnce 里生成自然回复用的 model（temperature:0.7）分开，用
+// classifierModel（temperature:0）——真实测试发现最简单的首轮"你好"
+// 开场白（明显合格，结尾就是一句合规的疑问句）偶尔也会被判成false，
+// 这类偶发误判正是高temperature给分类任务引入的噪音，不是判断逻辑
+// 本身有漏洞。
+const targetSlotCheckModel = classifierModel.withStructuredOutput(targetSlotCheckSchema, {
   name: 'check_asks_target_slot',
 });
 

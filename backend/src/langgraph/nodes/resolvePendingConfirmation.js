@@ -12,7 +12,7 @@
 // 追问，按"放弃这次确认"处理（跟明确否认时一样恢复原状），把主动权
 // 还给对话，让这一轮的真实内容能正常往下走。
 const { z } = require('zod');
-const { model } = require('../model');
+const { classifierModel } = require('../model');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
 
 const MAX_ASK_COUNT = 2;
@@ -27,7 +27,7 @@ const ResolutionSchema = z.object({
     ),
 });
 
-const structuredResolver = model.withStructuredOutput(ResolutionSchema, {
+const structuredResolver = classifierModel.withStructuredOutput(ResolutionSchema, {
   name: 'resolve_pending_confirmation',
 });
 
