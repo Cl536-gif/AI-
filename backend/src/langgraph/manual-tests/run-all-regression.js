@@ -46,6 +46,7 @@ const SCRIPTS = [
   { file: 'scenario3-ask-budget.js', needsServer: false, needsNetwork: true },
   { file: 'scenario5-first-turn-no-fabrication.js', needsServer: false, needsNetwork: true },
   { file: 'scenario6-same-input-comparison.js', needsServer: false, needsNetwork: true },
+  { file: 'scenario16-rule19-half-example-check.js', needsServer: false, needsNetwork: true },
   { file: 'scenario7-standard-9-turn.js', needsServer: true, needsNetwork: true },
   { file: 'scenario13-eventual-completion.js', needsServer: true, needsNetwork: true },
   { file: 'scenario14-long-conversation-premature-plan.js', needsServer: true, needsNetwork: true },
