@@ -88,6 +88,11 @@ async function generatePlan(state) {
     // eslint-disable-next-line no-console
     console.log('[generatePlan] 检索query:', query);
     // eslint-disable-next-line no-console
+    console.log(
+      '[generatePlan] 实际检索到并塞进prompt的资料片段:',
+      knowledgeSections.length > 0 ? `\n${knowledgeSections.join('\n\n')}` : '（空，本轮理应触发"没查到资料"的兜底说法）'
+    );
+    // eslint-disable-next-line no-console
     console.log('[generatePlan] 生成的方案:', replyText);
   }
 
