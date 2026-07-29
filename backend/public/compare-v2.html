@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>对比测试 v2：本地知识库 vs LangGraph 状态机（独立输入 + 存档）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f2f2;
+    color: #1a1a1a;
+  }
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  #new-conversation {
+    padding: 8px 14px;
+    font-size: 13px;
+    border: 1px solid #d33;
+    border-radius: 6px;
+    background: #fff;
+    color: #d33;
+    cursor: pointer;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  #new-conversation:hover { background: #fff0f0; }
+  .composer { display: flex; gap: 8px; margin-bottom: 12px; }
+  .composer input {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+  }
+  .composer button {
+    padding: 10px 18px;
+    font-size: 14px;
+    border: none;
+    border-radius: 6px;
+    background: #07c160;
+    color: #fff;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .composer button:disabled { background: #a8a8a8; cursor: not-allowed; }
+  .columns { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 24px; }
+  .col {
+    flex: 1;
+    min-width: 0;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .col h2 { font-size: 14px; margin: 0 0 12px; color: #555; flex: 0 0 auto; }
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 60vh;
+    padding-right: 4px;
+  }
+  .turn { margin-bottom: 16px; }
+  .turn:last-child { margin-bottom: 0; }
+  .bubble {
+    display: inline-block;
+    max-width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .turn--user { text-align: right; }
+  .turn--user .bubble { background: #95ec69; }
+  .turn--assistant .bubble { background: #f0f0f0; }
+  .status { color: #8a8a8a; font-size: 13px; }
+  .error { color: #d33; font-size: 13px; }
+  .empty-hint { color: #b3b3b3; font-size: 13px; }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; font-size: 12px; color: #888; }
+  .chunk {
+    font-size: 12px;
+    color: #444;
+    background: #f7f7f7;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    text-align: left;
+  }
+  .chunk-meta { color: #999; margin-bottom: 4px; text-align: left; }
+
+  .archive-section {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .archive-section h2 { font-size: 14px; margin: 0 0 12px; color: #555; }
+  .archive-list { display: flex; flex-direction: column; gap: 8px; }
+  .archive-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+  }
+  .archive-item-label { font-size: 13px; color: #333; }
+  .archive-item-meta { font-size: 12px; color: #999; margin-top: 2px; }
+  .archive-item-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+  .archive-item-actions button {
+    padding: 5px 10px;
+    font-size: 12px;
+    border: 1px solid #d9d9d9;
+    border-radius: 5px;
+    background: #fafafa;
+    color: #333;
+    cursor: pointer;
+  }
+  .archive-item-actions button:hover { background: #f0f0f0; }
+  .archive-item-actions button.copied { color: #07c160; border-color: #07c160; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+  .modal-overlay[hidden] { display: none; }
+  .modal-box {
+    background: #fff;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 1100px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #eee;
+    flex: 0 0 auto;
+  }
+  .modal-header-title { font-size: 14px; color: #333; }
+  .modal-header-actions { display: flex; gap: 8px; }
+  .modal-header-actions button {
+    padding: 6px 14px;
+    font-size: 13px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    background: #fafafa;
+    cursor: pointer;
+  }
+  .modal-header-actions button.copied { color: #07c160; border-color: #07c160; }
+  .modal-columns {
+    display: flex;
+    gap: 16px;
+    padding: 16px 18px;
+    overflow-y: auto;
+  }
+  .modal-col { flex: 1; min-width: 0; }
+  .modal-col h3 { font-size: 13px; color: #555; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <h1>对比测试 v2：/api/chat-local（本地知识库）vs /api/chat-langgraph（状态机）—— 两栏独立输入 + 对话存档</h1>
+  <button id="new-conversation" type="button">新建对话（存档当前）</button>
+</div>
+
+<div class="columns">
+  <div class="col">
+    <h2>本地知识库模式（/api/chat-local）</h2>
+    <div class="composer">
+      <input id="local-question" type="text" placeholder="只给左边发消息…" autocomplete="off" />
+      <button id="local-ask">发送</button>
+    </div>
+    <div id="local-log" class="log"><span class="empty-hint">还没有对话，发一条消息开始测试。</span></div>
+  </div>
+  <div class="col">
+    <h2>LangGraph 状态机模式（/api/chat-langgraph）</h2>
+    <div class="composer">
+      <input id="langgraph-question" type="text" placeholder="只给右边发消息…" autocomplete="off" />
+      <button id="langgraph-ask">发送</button>
+    </div>
+    <div id="langgraph-log" class="log"><span class="empty-hint">还没有对话，发一条消息开始测试。</span></div>
+  </div>
+</div>
+
+<div class="archive-section">
+  <h2>历史存档（保存在浏览器本地，仅这台设备/这个浏览器可见）</h2>
+  <div id="archive-list" class="archive-list">
+    <span class="empty-hint">还没有存档，点击上方"新建对话"会把当前对话存档后再清空。</span>
+  </div>
+</div>
+
+<div id="archive-modal" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="modal-title" class="modal-header-title"></span>
+      <div class="modal-header-actions">
+        <button id="modal-copy" type="button">复制全文</button>
+        <button id="modal-close" type="button">关闭</button>
+      </div>
+    </div>
+    <div class="modal-columns">
+      <div class="modal-col">
+        <h3>/api/chat-local</h3>
+        <div id="modal-local-log" class="log" style="max-height: none;"></div>
+      </div>
+      <div class="modal-col">
+        <h3>/api/chat-langgraph</h3>
+        <div id="modal-langgraph-log" class="log" style="max-height: none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ARCHIVE_STORAGE_KEY = 'compareV2Archives';
+
+const localQuestionInput = document.getElementById('local-question');
+const localAskBtn = document.getElementById('local-ask');
+const localLog = document.getElementById('local-log');
+
+const langgraphQuestionInput = document.getElementById('langgraph-question');
+const langgraphAskBtn = document.getElementById('langgraph-ask');
+const langgraphLog = document.getElementById('langgraph-log');
+
+const newConversationBtn = document.getElementById('new-conversation');
+const archiveListEl = document.getElementById('archive-list');
+
+const archiveModal = document.getElementById('archive-modal');
+const modalTitle = document.getElementById('modal-title');
+const modalLocalLog = document.getElementById('modal-local-log');
+const modalLanggraphLog = document.getElementById('modal-langgraph-log');
+const modalCopyBtn = document.getElementById('modal-copy');
+const modalCloseBtn = document.getElementById('modal-close');
+
+// 两栏完全独立：各自的对话历史/threadId互不影响，只给某一边发消息
+// 不会影响另一边。
+let localHistory = []; // [{ role: 'user'|'assistant', content }]，原样传给后端当上下文
+let localTurns = []; // [{ role, text, retrieved? }]
+let langgraphThreadId = null;
+let langgraphTurns = []; // [{ role, text }]
+
+// "新建对话"会让 conversationEpoch 递增，用来识别"存档/重置前发出、
+// 之后才返回"的过期请求，避免这类请求的回调把内容写回已经清空的状态里。
+let conversationEpoch = 0;
+
+let currentModalArchiveId = null;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderTurnsInto(container, turns) {
+  if (turns.length === 0) {
+    container.innerHTML = '<span class="empty-hint">还没有对话，发一条消息开始测试。</span>';
+    return;
+  }
+  container.innerHTML = turns.map((t) => {
+    const cls = t.role === 'user' ? 'turn turn--user' : 'turn turn--assistant';
+    if (t.pending) {
+      return `<div class="${cls}"><span class="status">请求中…</span></div>`;
+    }
+    if (t.error) {
+      return `<div class="${cls}"><span class="error">请求失败: ${escapeHtml(t.error)}</span></div>`;
+    }
+
+    let html = `<div class="${cls}"><span class="bubble">${escapeHtml(t.text)}</span>`;
+    if (t.retrieved && t.retrieved.length > 0) {
+      html += '<details><summary>查看本轮检索到的知识库片段</summary>';
+      t.retrieved.forEach((kb) => {
+        html += '<div class="chunk-meta"><strong>' + escapeHtml(kb.kbName) + '</strong>' +
+          (kb.error ? ('（' + escapeHtml(kb.error) + '）') : '（' + kb.chunks.length + ' 段）') + '</div>';
+        (kb.chunks || []).forEach((c) => {
+          html += '<div class="chunk">综合 ' + c.hybridScore.toFixed(4) +
+            '（语义 ' + c.semanticScore.toFixed(4) + ' + 关键词 ' + c.keywordScore.toFixed(4) +
+            '，来源: ' + escapeHtml(c.source) + '）\n' + escapeHtml(c.text) + '</div>';
+        });
+      });
+      html += '</details>';
+    }
+    html += '</div>';
+    return html;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderLocalLog() {
+  renderTurnsInto(localLog, localTurns);
+}
+
+function renderLanggraphLog() {
+  renderTurnsInto(langgraphLog, langgraphTurns);
+}
+
+async function askLocal(message, epoch) {
+  const historyForRequest = localHistory.slice();
+
+  localTurns.push({ role: 'user', text: message });
+  const pendingTurn = { role: 'assistant', pending: true };
+  localTurns.push(pendingTurn);
+  renderLocalLog();
+
+  try {
+    const res = await fetch('/api/chat-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history: historyForRequest }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (epoch !== conversationEpoch) return; // 已经新建对话，这个回复已经过期，丢弃
+
+    delete pendingTurn.pending;
+    pendingTurn.text = data.reply;
+    pendingTurn.retrieved = data.retrieved || [];
+
+    localHistory.push({ role: 'user', content: message });
+    localHistory.push({ role: 'assistant', content: data.reply });
+  } catch (err) {
+    if (epoch !== conversationEpoch) return;
+    delete pendingTurn.pending;
+    pendingTurn.error = err.message;
+  }
+  renderLocalLog();
+}
+
+async function askLanggraph(message, epoch) {
+  langgraphTurns.push({ role: 'user', text: message });
+  const pendingTurn = { role: 'assistant', pending: true };
+  langgraphTurns.push(pendingTurn);
+  renderLanggraphLog();
+
+  try {
+    const body = { message };
+    if (langgraphThreadId) body.threadId = langgraphThreadId;
+
+    const res = await fetch('/api/chat-langgraph', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (epoch !== conversationEpoch) return; // 已经新建对话，这个回复已经过期，丢弃
+
+    langgraphThreadId = data.threadId || langgraphThreadId;
+    delete pendingTurn.pending;
+    pendingTurn.text = data.reply;
+  } catch (err) {
+    if (epoch !== conversationEpoch) return;
+    delete pendingTurn.pending;
+    pendingTurn.error = err.message;
+  }
+  renderLanggraphLog();
+}
+
+async function sendLocal() {
+  const message = localQuestionInput.value.trim();
+  if (!message) return;
+  const epoch = conversationEpoch;
+  localQuestionInput.value = '';
+  localAskBtn.disabled = true;
+  await askLocal(message, epoch);
+  localAskBtn.disabled = false;
+  localQuestionInput.focus();
+}
+
+async function sendLanggraph() {
+  const message = langgraphQuestionInput.value.trim();
+  if (!message) return;
+  const epoch = conversationEpoch;
+  langgraphQuestionInput.value = '';
+  langgraphAskBtn.disabled = true;
+  await askLanggraph(message, epoch);
+  langgraphAskBtn.disabled = false;
+  langgraphQuestionInput.focus();
+}
+
+// ---------- 存档相关 ----------
+
+function loadArchives() {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error('读取本地存档失败:', err);
+    return [];
+  }
+}
+
+function saveArchives(archives) {
+  try {
+    localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(archives));
+  } catch (err) {
+    console.error('保存本地存档失败:', err);
+    alert('保存存档失败（可能是浏览器本地存储已满或被禁用）：' + err.message);
+  }
+}
+
+function formatTimestamp(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// 存档只保留 role/text，丢掉 pending/error/retrieved 这些运行时才有意义
+// 的字段，未完成（pending）的那一轮不存进去。
+function simplifyTurns(turns) {
+  return turns
+    .filter((t) => !t.pending)
+    .map((t) => ({ role: t.role, text: t.error ? `[请求失败] ${t.error}` : (t.text || '') }));
+}
+
+function archiveCurrentConversation() {
+  if (localTurns.length === 0 && langgraphTurns.length === 0) return; // 两边都没内容，不产生空存档
+
+  const archives = loadArchives();
+  const now = new Date();
+  archives.unshift({
+    id: `archive-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: now.getTime(),
+    label: formatTimestamp(now),
+    local: simplifyTurns(localTurns),
+    langgraph: simplifyTurns(langgraphTurns),
+  });
+  saveArchives(archives);
+}
+
+function turnsToPlainText(turns) {
+  if (turns.length === 0) return '（无对话内容）';
+  return turns.map((t) => `${t.role === 'user' ? '用户' : '助手'}：${t.text}`).join('\n\n');
+}
+
+function archiveToPlainText(archive) {
+  return `存档时间：${archive.label}\n\n` +
+    `【/api/chat-local】\n${turnsToPlainText(archive.local)}\n\n` +
+    `【/api/chat-langgraph】\n${turnsToPlainText(archive.langgraph)}`;
+}
+
+async function copyText(text, triggerBtn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    // 剪贴板API在非安全上下文（比如非localhost的http）可能不可用，
+    // 退回到 execCommand 这个老办法兜底。
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (fallbackErr) {
+      alert('复制失败: ' + fallbackErr.message);
+    }
+    document.body.removeChild(textarea);
+  }
+
+  if (triggerBtn) {
+    const original = triggerBtn.textContent;
+    triggerBtn.textContent = '已复制 ✓';
+    triggerBtn.classList.add('copied');
+    setTimeout(() => {
+      triggerBtn.textContent = original;
+      triggerBtn.classList.remove('copied');
+    }, 1500);
+  }
+}
+
+function renderArchiveList() {
+  const archives = loadArchives();
+  if (archives.length === 0) {
+    archiveListEl.innerHTML = '<span class="empty-hint">还没有存档，点击上方"新建对话"会把当前对话存档后再清空。</span>';
+    return;
+  }
+
+  archiveListEl.innerHTML = '';
+  archives.forEach((archive) => {
+    const item = document.createElement('div');
+    item.className = 'archive-item';
+
+    const labelWrap = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'archive-item-label';
+    label.textContent = archive.label;
+    const meta = document.createElement('div');
+    meta.className = 'archive-item-meta';
+    meta.textContent = `本地知识库 ${archive.local.length} 条消息 · LangGraph ${archive.langgraph.length} 条消息`;
+    labelWrap.appendChild(label);
+    labelWrap.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'archive-item-actions';
+
+    const viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.textContent = '查看';
+    viewBtn.addEventListener('click', () => openArchiveModal(archive.id));
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.textContent = '复制';
+    copyBtn.addEventListener('click', () => copyText(archiveToPlainText(archive), copyBtn));
+
+    actions.appendChild(viewBtn);
+    actions.appendChild(copyBtn);
+
+    item.appendChild(labelWrap);
+    item.appendChild(actions);
+    archiveListEl.appendChild(item);
+  });
+}
+
+function openArchiveModal(archiveId) {
+  const archives = loadArchives();
+  const archive = archives.find((a) => a.id === archiveId);
+  if (!archive) return;
+
+  currentModalArchiveId = archiveId;
+  modalTitle.textContent = `存档：${archive.label}`;
+  renderTurnsInto(modalLocalLog, archive.local.map((t) => ({ role: t.role, text: t.text })));
+  renderTurnsInto(modalLanggraphLog, archive.langgraph.map((t) => ({ role: t.role, text: t.text })));
+  archiveModal.hidden = false;
+}
+
+function closeArchiveModal() {
+  archiveModal.hidden = true;
+  currentModalArchiveId = null;
+}
+
+function newConversation() {
+  archiveCurrentConversation();
+
+  conversationEpoch += 1; // 让任何还没返回的旧请求在回调时识别出自己已经过期
+  localHistory = [];
+  localTurns = [];
+  langgraphThreadId = null;
+  langgraphTurns = [];
+  renderLocalLog();
+  renderLanggraphLog();
+  localQuestionInput.value = '';
+  langgraphQuestionInput.value = '';
+  localQuestionInput.focus();
+
+  renderArchiveList();
+}
+
+localAskBtn.addEventListener('click', sendLocal);
+localQuestionInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendLocal();
+});
+
+langgraphAskBtn.addEventListener('click', sendLanggraph);
+langgraphQuestionInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendLanggraph();
+});
+
+newConversationBtn.addEventListener('click', newConversation);
+
+modalCloseBtn.addEventListener('click', closeArchiveModal);
+archiveModal.addEventListener('click', (e) => {
+  if (e.target === archiveModal) closeArchiveModal(); // 点击背景遮罩也能关闭
+});
+modalCopyBtn.addEventListener('click', () => {
+  const archives = loadArchives();
+  const archive = archives.find((a) => a.id === currentModalArchiveId);
+  if (!archive) return;
+  copyText(archiveToPlainText(archive), modalCopyBtn);
+});
+
+renderLocalLog();
+renderLanggraphLog();
+renderArchiveList();
+</script>
+</body>
+</html>
