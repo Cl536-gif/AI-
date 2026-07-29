@@ -15,8 +15,26 @@ const ACK_OPENER_PHRASES = ['收到', '记下啦', '好的记下了'];
 
 const QUOTE_ATTRIBUTION_REGEX = /(?:你说|你刚说|听到你说|你提到)[的]?["“'']([^"”'']{2,})["”'']/g;
 
+// 跟 manual-tests/scenario3-ask-budget.js 里已经验证过的检测范围保持
+// 一致，不重新发明一套。systemPrompt.js第13/16条明确禁止emoji装饰，
+// 但这条规则之前只存在于提示词文字描述里，从没被这个模块纳入代码层面
+// 检测——真实测试里在/api/chat-local的回复里撞见过一次emoji，说明
+// 光靠提示词描述并不总是可靠，需要跟排比句、加粗这些其它四类一样，
+// 补上代码层面的确定性检测。
+const EMOJI_REGEX = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+
+// 排查了一遍 systemPrompt.js 全部规则，找出跟emoji同一类"只写在提示词
+// 文字描述里、从没被这个模块纳入代码检测"的硬性、可机械判断的格式类
+// 规则，这两条也补上：
+// - 第13条禁止"标题"这类文档化排版——markdown标题（# ## ###）之前
+//   完全没检测，只查了加粗和分点列表。
+// - 第28条明确禁止称呼词"乖乖"——是个具体的禁用词，可以直接字符串
+//   匹配，不需要语义判断。
+const MARKDOWN_HEADING_REGEX = /^#{1,6}\s+\S/m;
+const BANNED_ADDRESS_TERMS = ['乖乖'];
+
 /**
- * 检测一段回复文本里有没有出现已知的五类违规。
+ * 检测一段回复文本里有没有出现已知的八类违规。
  * @param {string} text 待检测的回复文本
  * @param {{ userMessages?: string[] }} options
  *   userMessages：本轮之前用户实际说过的所有原话（纯文本数组），
@@ -47,9 +65,22 @@ function detectFormatViolations(text, { userMessages = [] } = {}) {
     violations.push({ type: 'list_marker', detail: '分点列表符号（-、•、数字编号）' });
   }
 
+  if (MARKDOWN_HEADING_REGEX.test(text)) {
+    violations.push({ type: 'markdown_heading', detail: 'markdown标题（# ## ###）' });
+  }
+
+  const bannedTermHit = BANNED_ADDRESS_TERMS.find((term) => text.includes(term));
+  if (bannedTermHit) {
+    violations.push({ type: 'banned_address_term', detail: bannedTermHit });
+  }
+
   const englishHits = findEnglishViolations(text);
   if (englishHits.length > 0) {
     violations.push({ type: 'english_letters', detail: englishHits.join('、') });
+  }
+
+  if (EMOJI_REGEX.test(text)) {
+    violations.push({ type: 'emoji', detail: '出现了emoji表情符号' });
   }
 
   if (userMessages.length > 0) {
@@ -80,8 +111,14 @@ function buildRetryInstruction(violations) {
           return '不要使用markdown加粗（**文字**），换成普通文字';
         case 'list_marker':
           return '不要使用分点列表符号（-、•、数字编号），改成自然口语化的连续句子';
+        case 'markdown_heading':
+          return '不要使用markdown标题（# ## ###），改成自然口语化的连续句子，不要分段加小标题';
+        case 'banned_address_term':
+          return `不要使用"${v.detail}"这个称呼，换成不称呼或者用"宝子""闺蜜"这类允许的称呼`;
         case 'english_letters':
           return `不要出现英文字母（上一次生成里检测到: ${v.detail}），全部换成对应的中文说法`;
+        case 'emoji':
+          return '不要使用任何emoji表情符号装饰，改成纯文字表达语气';
         case 'fabricated_quote':
           return `不要用引号编造用户没说过的话（上一次生成里检测到疑似编造: "${v.detail}"），只有用户真实说过的原话才能用引号引用`;
         default:
@@ -96,13 +133,18 @@ function buildRetryInstruction(violations) {
 }
 
 /**
- * 重试耗尽后的最终确定性修复：只处理能安全用字符串操作修的两类——
- * ack_opener（直接切掉开头那个短语）和 parallel_question（把"是X，
+ * 重试耗尽后的最终确定性修复：只处理能安全用字符串操作修的五类——
+ * ack_opener（直接切掉开头那个短语）、parallel_question（把"是X，
  * 还是Y？"的逗号去掉、合并成一句连读问句，比如"是食堂还是点外卖呀？"，
- * 这跟真实测试里模型自己有时会自然生成的、不违规的表达方式是一致的）。
- * 其余三类（markdown/英文字母/编造原话）不做字符串强行处理，避免破坏
- * 语义或拼出读不通的句子——这几类如果重试耗尽仍然违规，只能原样返回
- * 连同 violations 一起交给调用方处理。
+ * 这跟真实测试里模型自己有时会自然生成的、不违规的表达方式是一致的）、
+ * emoji（直接删掉emoji字符本身）、markdown_heading（去掉行首的#号，
+ * 标题下面的文字本身通常还是通顺的）、banned_address_term（直接删掉
+ * 禁用称呼词本身）——这几类删除后都不会破坏句子结构，只需要顺手清理
+ * 删除后可能留下的多余空格。
+ * 其余两类（markdown加粗/英文字母/编造原话/学术数据这几类如果以后
+ * 加入检测）不做字符串强行处理，避免破坏语义或拼出读不通的句子——
+ * 这几类如果重试耗尽仍然违规，只能原样返回连同 violations 一起交给
+ * 调用方处理。
  */
 function applyLastResortFix(text, violations) {
   let fixed = text;
@@ -117,6 +159,22 @@ function applyLastResortFix(text, violations) {
   if (violations.some((v) => v.type === 'parallel_question')) {
     fixed = fixed.replace(/是([^，,？?。！\n]+)[，,]\s*(还是[^？?\n]+[？?])/g, '是$1$2');
   }
+
+  if (violations.some((v) => v.type === 'emoji')) {
+    fixed = fixed.replace(new RegExp(EMOJI_REGEX.source, 'gu'), '');
+  }
+
+  if (violations.some((v) => v.type === 'markdown_heading')) {
+    fixed = fixed.replace(/^#{1,6}\s+/gm, '');
+  }
+
+  if (violations.some((v) => v.type === 'banned_address_term')) {
+    BANNED_ADDRESS_TERMS.forEach((term) => {
+      fixed = fixed.split(term).join('');
+    });
+  }
+
+  fixed = fixed.replace(/[ \t]{2,}/g, ' '); // 清理上面几类删除操作可能留下的连续空格
 
   return fixed;
 }
