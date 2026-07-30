@@ -81,6 +81,31 @@ const DietState = Annotation.Root({
     reducer: (_left, right) => right,
     default: () => null,
   }),
+
+  // 六项信息采集完毕、generatePlan出方案之前，服务边界问询的最终结论：
+  // null（还没问/还没定）| 'free'（免费临时问答）| 'subscribed'（开通了
+  // 定期推送服务）。只有这一项不是null时才会放行到generatePlan。
+  serviceTier: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 服务边界问题问出去之后、等用户回答期间的暂存状态，形状：
+  // { stage: 'choice' | 'schedule', askedCount }。stage是'choice'时在等
+  // 用户选免费还是订阅；用户选订阅后转成'schedule'，等用户设定推送
+  // 时间。两个阶段的askedCount分开计数，互不影响。resolved（拿到明确
+  // 结论或者含糊次数用完默认按免费处理）之后清空为null。
+  pendingServiceChoice: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 用户开通推送服务后自己设定的提醒时间/频率偏好，自由文本，不做
+  // 格式校验。serviceTier不是'subscribed'时为null。
+  pushSchedule: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
 });
 
 module.exports = {

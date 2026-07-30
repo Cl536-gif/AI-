@@ -50,6 +50,7 @@ const SCRIPTS = [
   { file: 'scenario7-standard-9-turn.js', needsServer: true, needsNetwork: true },
   { file: 'scenario13-eventual-completion.js', needsServer: true, needsNetwork: true },
   { file: 'scenario14-long-conversation-premature-plan.js', needsServer: true, needsNetwork: true },
+  { file: 'scenario17-service-choice.js', needsServer: true, needsNetwork: true },
   {
     file: path.join(BACKEND_DIR, 'manual-test-identity.js'),
     label: 'manual-test-identity.js（老架构 /api/chat-local，跟scenario6对照用）',

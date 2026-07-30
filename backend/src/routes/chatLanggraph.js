@@ -63,6 +63,13 @@ router.post('/', async (req, res, next) => {
       threadId: resolvedThreadId,
       slots: result.slots,
       isComplete: result.isComplete,
+      // isComplete 现在只代表"六项信息问完"，不代表方案已经生成——
+      // 六项问完之后还要先经过 askServiceChoice 这一步，plan 是否真的
+      // 已经生成，看 retrieved 是否非空（只有 generatePlan 才会填这项）
+      // 更准确；serviceTier/pushSchedule 供前端/测试脚本观察这个新分岔
+      // 的状态。
+      serviceTier: result.serviceTier,
+      pushSchedule: result.pushSchedule,
       retrieved: result.retrieved || [],
     });
   } catch (err) {
