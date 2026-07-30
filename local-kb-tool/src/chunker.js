@@ -30,13 +30,16 @@ function chunkText(text, { maxChunkChars = 500, minLeadChars = 200 } = {}) {
   const chunks = [];
   let current = '';
   let inBlock = false;
-  // 前言只允许并入"下一个"结构化边界一次——避免开头连续好几个圈码
-  // 数字项目（比如①②③紧挨着出现、单项本身很短）在 minLeadChars 攒够
-  // 之前被反复并到一起，把预算、忌口这类本该分开的相邻项目又混回一块。
-  let leadMerged = false;
+  // 前言只允许"跳过空壳边界"（比如FAQ手册标题后紧跟的"一、上手与使用类"
+  // 这类没有自己内容、下一段就是另一个边界的子标题）——一旦某个结构化
+  // 边界后面真的跟了一段实质内容，紧接着的下一个边界就必须正常独立
+  // 成块，不能再往下吞并，避免①②③④这种各自有实质内容的相邻项目被
+  // 连续合并回一块。判断放在"要不要合并这次边界"之前，而不是合并完
+  // 之后才生效——否则每次都会多吞并一个本该独立的边界。
+  let boundarySegmentHasContent = false;
 
-  function leadTooShort() {
-    return chunks.length === 0 && !leadMerged && current.trim().length < minLeadChars;
+  function canAbsorbBoundary() {
+    return chunks.length === 0 && !boundarySegmentHasContent && current.trim().length < minLeadChars;
   }
 
   function flush() {
@@ -49,15 +52,16 @@ function chunkText(text, { maxChunkChars = 500, minLeadChars = 200 } = {}) {
 
   for (const paragraph of paragraphs) {
     if (STRUCTURAL_BOUNDARY_REGEX.test(paragraph)) {
-      if (leadTooShort()) {
+      if (canAbsorbBoundary()) {
         current = current ? `${current}\n\n${paragraph}` : paragraph;
         inBlock = true;
-        leadMerged = true;
+        boundarySegmentHasContent = false;
         continue;
       }
       flush();
       current = paragraph;
       inBlock = true;
+      boundarySegmentHasContent = false;
       continue;
     }
 
@@ -70,11 +74,23 @@ function chunkText(text, { maxChunkChars = 500, minLeadChars = 200 } = {}) {
     }
 
     if (inBlock) {
+      // 结构化边界内部依然要守住 maxChunkChars 兜底——像"信息采集清单"
+      // 这类天然很短的①-⑥单项、FAQ的Q/A对不会撞到这个上限，但像学术
+      // 引用堆叠、内部没有更细边界的大节，不能因为"在边界内"就无限
+      // 增长到远超预期的大小，那样会变成新的"内容跨度太大"问题。
+      if (current.length + paragraph.length + 2 > maxChunkChars) {
+        flush();
+        current = paragraph;
+        inBlock = true;
+        boundarySegmentHasContent = true;
+        continue;
+      }
       current = current ? `${current}\n\n${paragraph}` : paragraph;
+      boundarySegmentHasContent = true;
       continue;
     }
 
-    if (current && current.length + paragraph.length + 2 > maxChunkChars && !leadTooShort()) {
+    if (current && current.length + paragraph.length + 2 > maxChunkChars && !canAbsorbBoundary()) {
       flush();
     }
     current = current ? `${current}\n\n${paragraph}` : paragraph;
