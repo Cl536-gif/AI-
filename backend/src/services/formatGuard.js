@@ -133,18 +133,25 @@ function buildRetryInstruction(violations) {
 }
 
 /**
- * 重试耗尽后的最终确定性修复：只处理能安全用字符串操作修的五类——
+ * 重试耗尽后的最终确定性修复：只处理能安全用字符串操作修的七类——
  * ack_opener（直接切掉开头那个短语）、parallel_question（把"是X，
  * 还是Y？"的逗号去掉、合并成一句连读问句，比如"是食堂还是点外卖呀？"，
  * 这跟真实测试里模型自己有时会自然生成的、不违规的表达方式是一致的）、
  * emoji（直接删掉emoji字符本身）、markdown_heading（去掉行首的#号，
  * 标题下面的文字本身通常还是通顺的）、banned_address_term（直接删掉
- * 禁用称呼词本身）——这几类删除后都不会破坏句子结构，只需要顺手清理
- * 删除后可能留下的多余空格。
- * 其余两类（markdown加粗/英文字母/编造原话/学术数据这几类如果以后
- * 加入检测）不做字符串强行处理，避免破坏语义或拼出读不通的句子——
- * 这几类如果重试耗尽仍然违规，只能原样返回连同 violations 一起交给
- * 调用方处理。
+ * 禁用称呼词本身）、markdown_bold（去掉**符号本身，保留中间的文字——
+ * 这跟parallel_question的思路一致：只拆掉"标记符号"，被标记的内容
+ * 原样保留，不会读不通）、list_marker（去掉每行行首的-/•/数字编号，
+ * 这几类删除后都不会破坏句子结构，只需要顺手清理删除后可能留下的多余
+ * 空格。
+ * 其余一类（英文字母/编造原话/学术数据这几类如果以后加入检测）不做
+ * 字符串强行处理，避免破坏语义或拼出读不通的句子——这几类如果重试
+ * 耗尽仍然违规，只能原样返回连同 violations 一起交给调用方处理。
+ *
+ * 注意：这个函数只负责清理"标记符号"本身，不负责判断被标记的内容
+ * 是否完整——比如重试过程中模型为了消除格式违规把方案正文删掉、只
+ * 剩确认语这种"内容缺失"问题，不属于这个函数的职责范围，需要调用方
+ * 另外检查。
  */
 function applyLastResortFix(text, violations) {
   let fixed = text;
@@ -158,6 +165,14 @@ function applyLastResortFix(text, violations) {
 
   if (violations.some((v) => v.type === 'parallel_question')) {
     fixed = fixed.replace(/是([^，,？?。！\n]+)[，,]\s*(还是[^？?\n]+[？?])/g, '是$1$2');
+  }
+
+  if (violations.some((v) => v.type === 'markdown_bold')) {
+    fixed = fixed.replace(/\*\*([^*]+)\*\*/g, '$1');
+  }
+
+  if (violations.some((v) => v.type === 'list_marker')) {
+    fixed = fixed.replace(/^\s*[-•]\s+/gm, '').replace(/^\s*\d+[.、)]\s+/gm, '');
   }
 
   if (violations.some((v) => v.type === 'emoji')) {
