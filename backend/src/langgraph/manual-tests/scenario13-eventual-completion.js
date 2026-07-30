@@ -69,7 +69,11 @@ async function main() {
 
     if (data.isComplete && completedAtTurn === null) {
       completedAtTurn = i + 1;
-      console.log(`\n>>> 六项信息在第${completedAtTurn}轮全部确认完毕，触发了 generatePlan`);
+      // isComplete变true这一轮触发的是askServiceChoice（问免费问答还是
+      // 付费定期推送），不是直接触发generatePlan——真正出方案要等用户
+      // 回答这个分岔之后，这个脚本只关心六项能不能收敛，不延伸测服务
+      // 分岔，那部分见 scenario17-service-choice.js。
+      console.log(`\n>>> 六项信息在第${completedAtTurn}轮全部确认完毕，触发了 askServiceChoice`);
       break;
     }
   }

@@ -1,7 +1,11 @@
 // 手动测试脚本（需要真实起服务、真实网络访问 DashScope，云端沙箱
 // 环境跑不了）。标准9轮测试，走真实的 /api/chat-langgraph HTTP接口
-// （不是直接调用节点函数），完整验证六项采集 + generatePlan 出方案
-// 这一整条链路。
+// （不是直接调用节点函数），验证六项采集这条链路。
+//
+// 注意：isComplete变true之后不再直接出方案——新增了askServiceChoice
+// 分岔（问免费问答还是付费定期推送），这个脚本只测九轮标准采集，
+// 跑到isComplete=true就结束，不延伸到服务分岔+generatePlan那一段，
+// 那部分的验证见 scenario17-service-choice.js。
 //
 // 运行前先在另一个终端起服务：
 //   cd backend && npm start
@@ -62,12 +66,16 @@ async function main() {
     );
 
     if (data.isComplete) {
-      console.log('\n>>> 六项信息已全部确认，这一轮应该是 generatePlan 出的方案，重点检查以下几点：');
-      console.log('    1. 有没有主动推荐大众化菜品（不是健身向/小众菜品）');
-      console.log('    2. 分量描述是不是生活化类比（"一拳米饭""一掌蔬菜"），不是精确克数');
-      console.log('    3. 每道菜有没有带"如果食堂没有，换成XX"这类替代方案（第43条，这次重点）');
-      console.log('    4. 举例有没有过度细化到具体口味/品类');
-      console.log('    5. 格式上有没有markdown加粗/列表符号/emoji/英文字母/排比反问句');
+      // isComplete变true这一轮不再直接出方案——新增了askServiceChoice
+      // 分岔（问免费问答还是付费定期推送），这一轮的reply应该是服务
+      // 边界话术，真正的方案要等用户回答这个分岔之后（serviceTier
+      // 被定下来）才会在后续某一轮出现，这个脚本只测九轮标准采集，
+      // 不延伸到服务分岔，所以不再需要额外发消息去触发方案。
+      console.log('\n>>> 六项信息已全部确认，这一轮应该是 askServiceChoice 问的服务边界话术，不是方案本身：');
+      console.log('    1. reply里有没有说清楚"免费问答"和"付费定期推送"这两个选项');
+      console.log('    2. 格式上有没有markdown加粗/列表符号/emoji/英文字母/排比反问句');
+      console.log('    （方案本身要等用户回答这个分岔之后才会出现，那几条大众化菜品/分量/');
+      console.log('     替代方案的检查点见 scenario17-service-choice.js 里走到 generatePlan 之后的输出）');
     }
   }
 

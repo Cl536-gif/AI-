@@ -104,7 +104,12 @@ async function resolveScheduleStage(state, pending) {
   }
 
   if (outcome === 'schedule_set') {
-    return { serviceTier: 'subscribed', pushSchedule: scheduleText, pendingServiceChoice: null };
+    return {
+      serviceTier: 'subscribed',
+      pushSchedule: scheduleText,
+      pendingServiceChoice: null,
+      justSetPushSchedule: true,
+    };
   }
   if (outcome === 'decline') {
     return { serviceTier: 'free', pendingServiceChoice: null };

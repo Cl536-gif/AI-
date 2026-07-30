@@ -7,7 +7,12 @@
 // 六项状态的闲聊/跑题内容，把对话长度撑到20轮以上，同时每一轮
 // （只要还没收集完）都会重新调用 askNextQuestion，反复给这道检测
 // 制造被撞见的机会；最后再用几轮"正常配合"的真实回答收尾，确认最终
-// 依然能正常走到 generatePlan。
+// 依然能正常走到 isComplete。
+//
+// 注意：isComplete变true之后不再直接出方案——新增了askServiceChoice
+// 分岔（问免费问答还是付费定期推送），这个脚本只关心长对话下六项能
+// 不能收敛、"提前出方案"矛盾检测在长历史下是否依然有效，不延伸测
+// 服务分岔+generatePlan那一段，那部分见 scenario17-service-choice.js。
 //
 // 运行前先在另一个终端起服务：
 //   cd backend && LANGGRAPH_DEBUG=1 npm start
@@ -90,7 +95,7 @@ async function main() {
 
     if (data.isComplete && completedAtTurn === null) {
       completedAtTurn = i + 1;
-      console.log(`\n>>> 六项信息在第${completedAtTurn}轮全部确认完毕，触发了 generatePlan`);
+      console.log(`\n>>> 六项信息在第${completedAtTurn}轮全部确认完毕，触发了 askServiceChoice`);
       break;
     }
   }

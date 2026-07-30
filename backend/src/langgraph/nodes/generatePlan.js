@@ -44,7 +44,13 @@ async function generatePlan(state) {
   const taskInstruction =
     '【本轮任务】六项信息已经全部确认完毕，现在请按第2条要求先用一句话' +
     '复述已收集到的信息，再给出第一版具体的饮食方案（只给"这一顿/今天"' +
-    '这一次的方案，不要甩出多日框架）。已经确认的信息：\n' +
+    '这一次的方案，不要甩出多日框架）。\n\n' +
+    (state.justSetPushSchedule
+      ? '【重要】用户本轮刚完成订阅推送的时间设定（即pushSchedule在本轮被' +
+        '写入），plan_text开头第一句必须完整呼应这件事，不能以时间信息或' +
+        '感叹号开头导致前半句缺失。\n\n'
+      : '') +
+    '已经确认的信息：\n' +
     `${formatConfirmedSlots(state.slots)}\n\n` +
     (knowledgeSections.length > 0
       ? `可参考的知识库资料：\n${knowledgeSections.join('\n\n')}\n\n` +
@@ -99,6 +105,10 @@ async function generatePlan(state) {
   return {
     messages: [{ role: 'ai', content: replyText }],
     retrieved: perKb,
+    // 不管这一轮有没有用上justSetPushSchedule，都要显式重置回false——
+    // generatePlan六项确认完之后每一轮都会再次被路由到（同一个serviceTier
+    // 会一直复用），不重置的话下一轮会被误判成"又刚设定了一次"。
+    justSetPushSchedule: false,
   };
 }
 

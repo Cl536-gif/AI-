@@ -106,6 +106,16 @@ const DietState = Annotation.Root({
     reducer: (_left, right) => right,
     default: () => null,
   }),
+
+  // 一次性标记：本轮resolveServiceChoice是不是刚把pushSchedule写入
+  // （用户刚完成推送时间设定）。只在resolveServiceChoice设为true那
+  // 一轮生效，generatePlan读取后必须显式把它重置回false，否则后续
+  // 每一轮（生成方案后還会一直复用同一个serviceTier继续走generatePlan）
+  // 都会被误判成"刚设定"。
+  justSetPushSchedule: Annotation({
+    reducer: (_left, right) => right,
+    default: () => false,
+  }),
 });
 
 module.exports = {
