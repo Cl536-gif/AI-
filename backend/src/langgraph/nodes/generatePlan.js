@@ -65,6 +65,22 @@ function stripLeadingParenthetical(text) {
   return text.replace(/^[（(][^）)]*[）)][ \t　]*\n*/, '');
 }
 
+// 真实测试撞见过更严重的一种失败：LLM在重试压力大时，最后一次生成
+// 干脆不写方案正文，只留呼应语+一句无关括号说明——这两处一剥离，
+// 剩下的方案内容就是空字符串，会把一句只有确认语的空洞回复发给
+// 用户。这里加一道最后防线：剥离完毕后如果内容短到不像话，就不放行
+// 这次结果，换成一句诚实的确定性兜底话，把"给方案"这件事留到下一轮，
+// 总比把看起来答非所问的空话发给用户安全。
+//
+// MIN_PLAN_LENGTH=20 这个阈值是拿真实测试日志里的两组数据定的：失败
+// 案例剥离后是0字；同一批日志里能找到的最短的真实完整方案（订阅+
+// 免费两种场景各挑了一个）剥离/复述后都在260字以上——20只是这两个
+// 数量级之间随便留出的安全余量（十几倍开外），不是卡着算出来的精确
+// 边界，以后如果观察到有正常方案被误判成"缺失"，可以直接调高这个
+// 数字，不用重新推导。
+const MIN_PLAN_LENGTH = 20;
+const NO_PLAN_FALLBACK_TEXT = '这顿的具体搭配我再想想，你先说说刚才这几项信息有没有需要补充的～';
+
 async function generatePlan(state) {
   const query = buildRetrievalQuery(state.slots);
   const perKb = await localKbBridge.retrieveFromKbs(query, config.localKbNames);
@@ -128,9 +144,23 @@ async function generatePlan(state) {
   // 指令层面已经要求LLM不要重复呼应订阅时间、也不要评论推送机制，但
   // 真实测试发现它偶尔还是会不听——这里再做两层确定性兜底，具体逻辑
   // 见 stripDuplicateScheduleAck / stripLeadingParenthetical 的注释。
-  const replyText = state.pendingServiceAck
+  const strippedReplyText = state.pendingServiceAck
     ? stripLeadingParenthetical(stripDuplicateScheduleAck(rawReplyText, state.pushSchedule))
     : rawReplyText;
+
+  // 不管走免费还是订阅分支，剥离完呼应/括号说明之后再统一做一次内容
+  // 完整性兜底，具体逻辑和阈值依据见 MIN_PLAN_LENGTH 的注释。
+  const isPlanMissing = strippedReplyText.trim().length < MIN_PLAN_LENGTH;
+  const replyText = isPlanMissing ? NO_PLAN_FALLBACK_TEXT : strippedReplyText;
+
+  if (process.env.LANGGRAPH_DEBUG && isPlanMissing) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[generatePlan] 剥离完呼应/括号说明后，方案内容只剩${strippedReplyText.trim().length}字（不足${MIN_PLAN_LENGTH}字阈值），` +
+        '判定为内容缺失，改用确定性兜底话术。剥离后的原始内容:',
+      JSON.stringify(strippedReplyText)
+    );
+  }
 
   // pendingServiceAck非空时，把这句确定性模板拼在LLM生成内容最前面——
   // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
