@@ -179,7 +179,10 @@ function applyLastResortFix(text, violations) {
   }
 
   if (violations.some((v) => v.type === 'emoji')) {
-    fixed = fixed.replace(new RegExp(EMOJI_REGEX.source, 'gu'), '');
+    // ️（变体选择符）经常跟在✔️这类emoji后面，只删emoji本身留下
+    // 这个不可见字符的话，行首会剩一个看不见但占位的符号——真实测试
+    // 撞见过，一起清掉。
+    fixed = fixed.replace(new RegExp(`${EMOJI_REGEX.source}|\\uFE0F`, 'gu'), '');
   }
 
   if (violations.some((v) => v.type === 'markdown_heading')) {
