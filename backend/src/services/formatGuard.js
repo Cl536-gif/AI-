@@ -158,7 +158,10 @@ function applyLastResortFix(text, violations) {
 
   if (violations.some((v) => v.type === 'ack_opener')) {
     ACK_OPENER_PHRASES.forEach((phrase) => {
-      const re = new RegExp(`^\\s*${phrase}[，,、]?\\s*`);
+      // 字符类之前只认逗号/顿号，模型偶尔会用"收到！"这类感叹号/波浪号
+      // 结尾，没被这个字符类覆盖到的话，开头词删掉后感叹号会原样留在
+      // 最前面，变成读不通的"！已经..."——这是真实测试撞见过的bug。
+      const re = new RegExp(`^\\s*${phrase}[，,、！!～~]?\\s*`);
       fixed = fixed.replace(re, '');
     });
   }
