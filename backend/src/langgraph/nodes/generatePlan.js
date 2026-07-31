@@ -36,20 +36,41 @@ function formatKnowledgeSections(perKb) {
     });
 }
 
+// pendingServiceAck已经用固定模板呼应过订阅时间，但真实测试发现LLM
+// 有时候还是会不听指令、自己在方案开头又写一遍意思重复的呼应句（措辞
+// 不完全一样，比如"收到"/"已经帮你设置好"/"已为你设置"，formatGuard
+// 检测不到这种"语义重复"）。这里不依赖猜测LLM具体会用哪种措辞，用一个
+// 通用信号兜底：固定模板和LLM重复呼应的那句话，开头第一句里必然都会
+// 出现用户设定的推送时间原文（pushSchedule）——只要生成内容的第一句
+// 里出现了这段原文，就说明大概率是在重复呼应订阅这件事，直接把这一句
+// 删掉。删除后紧跟着的通常是"复述六项信息"这句话（taskInstruction
+// 本来就要求方案以这句开头），本身就是能独立成句的开场白（免费模式下
+// 方案也是这样直接开头的，见真实测试），不需要额外拼接过渡词。
+function stripDuplicateScheduleAck(text, pushSchedule) {
+  if (!pushSchedule) return text;
+  const firstBreakIndex = text.search(/[。！～\n]/);
+  const firstSegment = firstBreakIndex === -1 ? text : text.slice(0, firstBreakIndex + 1);
+  if (!firstSegment.includes(pushSchedule)) return text;
+  return text.slice(firstSegment.length).replace(/^[\s\n]+/, '');
+}
+
 async function generatePlan(state) {
   const query = buildRetrievalQuery(state.slots);
   const perKb = await localKbBridge.retrieveFromKbs(query, config.localKbNames);
   const knowledgeSections = formatKnowledgeSections(perKb);
 
   const taskInstruction =
+    (state.pendingServiceAck
+      ? '【最优先规则，必须严格遵守，排在下面所有要求之前】用户上一句刚' +
+        '说完推送提醒的时间偏好，这件事已经用一句固定话术单独回复过了，' +
+        '不需要你处理。你接下来要写的内容里，开头绝对不能出现任何形式的' +
+        '"收到""已经帮你设置好""已为你设置"这类呼应/确认推送时间的话，' +
+        '也不能提到用户刚设定的具体时间点本身——就当这件事已经翻篇了，' +
+        '直接从下面"先用一句话复述已收集到的信息"开始写。\n\n'
+      : '') +
     '【本轮任务】六项信息已经全部确认完毕，现在请按第2条要求先用一句话' +
     '复述已收集到的信息，再给出第一版具体的饮食方案（只给"这一顿/今天"' +
     '这一次的方案，不要甩出多日框架）。\n\n' +
-    (state.pendingServiceAck
-      ? '【重要】用户本轮刚完成订阅推送的时间设定，"已经帮你设置好"这句' +
-        '呼应已经用固定话术单独说过了，不会再由你来写，你的回复不需要、' +
-        '也不能再重复提这件事，直接从复述六项信息开始就好。\n\n'
-      : '') +
     '已经确认的信息：\n' +
     `${formatConfirmedSlots(state.slots)}\n\n` +
     (knowledgeSections.length > 0
@@ -76,7 +97,7 @@ async function generatePlan(state) {
     .filter((m) => getMessageRole(m) === 'human')
     .map((m) => getMessageText(m));
 
-  const { text: replyText } = await generateWithFormatGuard({
+  const { text: rawReplyText } = await generateWithFormatGuard({
     userMessages,
     generate: async (retryInstruction) => {
       const messages = [
@@ -89,6 +110,13 @@ async function generatePlan(state) {
       return response.content;
     },
   });
+
+  // 指令层面已经要求LLM不要重复呼应订阅时间，但真实测试发现它偶尔还是
+  // 会不听——这里再做一层确定性兜底，具体逻辑见stripDuplicateScheduleAck
+  // 的注释。
+  const replyText = state.pendingServiceAck
+    ? stripDuplicateScheduleAck(rawReplyText, state.pushSchedule)
+    : rawReplyText;
 
   // pendingServiceAck非空时，把这句确定性模板拼在LLM生成内容最前面——
   // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
