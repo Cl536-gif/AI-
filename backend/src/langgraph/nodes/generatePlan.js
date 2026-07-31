@@ -54,6 +54,17 @@ function stripDuplicateScheduleAck(text, pushSchedule) {
   return text.slice(firstSegment.length).replace(/^[\s\n]+/, '');
 }
 
+// 指令层面明确要求过"完全不能提推送/提醒这个话题"，真实测试发现LLM
+// 还是屡教不改地在剥离掉重复呼应句后，紧接着单独写一行括号补充说明
+// （比如"悄悄说：这个提醒是XX""这个提醒会从明天开始生效"），措辞每次
+// 都不一样、内容还经常跟固定模板自相矛盾。不再猜测具体措辞，改成认
+// 结构特征：这句话固定是紧跟在开头、独立成行、被括号整个包住——只要
+// 剥离完重复呼应句之后，紧接着的还是这种"整行都在括号里"的结构，直接
+// 整行删掉，不用管里面具体写了什么。
+function stripLeadingParenthetical(text) {
+  return text.replace(/^[（(][^）)]*[）)][ \t　]*\n*/, '');
+}
+
 async function generatePlan(state) {
   const query = buildRetrievalQuery(state.slots);
   const perKb = await localKbBridge.retrieveFromKbs(query, config.localKbNames);
@@ -114,11 +125,11 @@ async function generatePlan(state) {
     },
   });
 
-  // 指令层面已经要求LLM不要重复呼应订阅时间，但真实测试发现它偶尔还是
-  // 会不听——这里再做一层确定性兜底，具体逻辑见stripDuplicateScheduleAck
-  // 的注释。
+  // 指令层面已经要求LLM不要重复呼应订阅时间、也不要评论推送机制，但
+  // 真实测试发现它偶尔还是会不听——这里再做两层确定性兜底，具体逻辑
+  // 见 stripDuplicateScheduleAck / stripLeadingParenthetical 的注释。
   const replyText = state.pendingServiceAck
-    ? stripDuplicateScheduleAck(rawReplyText, state.pushSchedule)
+    ? stripLeadingParenthetical(stripDuplicateScheduleAck(rawReplyText, state.pushSchedule))
     : rawReplyText;
 
   // pendingServiceAck非空时，把这句确定性模板拼在LLM生成内容最前面——
