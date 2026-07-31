@@ -45,10 +45,10 @@ async function generatePlan(state) {
     '【本轮任务】六项信息已经全部确认完毕，现在请按第2条要求先用一句话' +
     '复述已收集到的信息，再给出第一版具体的饮食方案（只给"这一顿/今天"' +
     '这一次的方案，不要甩出多日框架）。\n\n' +
-    (state.justSetPushSchedule
-      ? '【重要】用户本轮刚完成订阅推送的时间设定（即pushSchedule在本轮被' +
-        '写入），plan_text开头第一句必须完整呼应这件事，不能以时间信息或' +
-        '感叹号开头导致前半句缺失。\n\n'
+    (state.pendingServiceAck
+      ? '【重要】用户本轮刚完成订阅推送的时间设定，"已经帮你设置好"这句' +
+        '呼应已经用固定话术单独说过了，不会再由你来写，你的回复不需要、' +
+        '也不能再重复提这件事，直接从复述六项信息开始就好。\n\n'
       : '') +
     '已经确认的信息：\n' +
     `${formatConfirmedSlots(state.slots)}\n\n` +
@@ -90,6 +90,11 @@ async function generatePlan(state) {
     },
   });
 
+  // pendingServiceAck非空时，把这句确定性模板拼在LLM生成内容最前面——
+  // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
+  // 不含加粗/列表/emoji/排比句这些违规的可能）。
+  const finalText = state.pendingServiceAck ? `${state.pendingServiceAck}\n\n${replyText}` : replyText;
+
   if (process.env.LANGGRAPH_DEBUG) {
     // eslint-disable-next-line no-console
     console.log('[generatePlan] 检索query:', query);
@@ -99,16 +104,17 @@ async function generatePlan(state) {
       knowledgeSections.length > 0 ? `\n${knowledgeSections.join('\n\n')}` : '（空，本轮理应触发"没查到资料"的兜底说法）'
     );
     // eslint-disable-next-line no-console
-    console.log('[generatePlan] 生成的方案:', replyText);
+    console.log('[generatePlan] 生成的方案:', finalText);
   }
 
   return {
-    messages: [{ role: 'ai', content: replyText }],
+    messages: [{ role: 'ai', content: finalText }],
     retrieved: perKb,
-    // 不管这一轮有没有用上justSetPushSchedule，都要显式重置回false——
+    // 不管这一轮有没有用上pendingServiceAck，都要显式重置回null——
     // generatePlan六项确认完之后每一轮都会再次被路由到（同一个serviceTier
-    // 会一直复用），不重置的话下一轮会被误判成"又刚设定了一次"。
-    justSetPushSchedule: false,
+    // 会一直复用），不重置的话下一轮会被误判成"又刚设定了一次"，重复
+    // 拼接这句话。
+    pendingServiceAck: null,
   };
 }
 

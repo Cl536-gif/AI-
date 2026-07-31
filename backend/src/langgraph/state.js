@@ -107,14 +107,16 @@ const DietState = Annotation.Root({
     default: () => null,
   }),
 
-  // 一次性标记：本轮resolveServiceChoice是不是刚把pushSchedule写入
-  // （用户刚完成推送时间设定）。只在resolveServiceChoice设为true那
-  // 一轮生效，generatePlan读取后必须显式把它重置回false，否则后续
-  // 每一轮（生成方案后還会一直复用同一个serviceTier继续走generatePlan）
-  // 都会被误判成"刚设定"。
-  justSetPushSchedule: Annotation({
+  // 一次性暂存：用户刚设定完推送时间那一轮，resolveServiceChoice用
+  // 确定性模板拼好的"已帮你设置好"这句话，不经过LLM生成（避免让
+  // generatePlan的LLM调用同时兼顾"呼应订阅+复述六项+给方案+守格式"
+  // 四件事，压力太大时观察到过牺牲方案内容去保格式的情况）。
+  // generatePlan读到后原样拼进最终回复最前面，读取后必须显式重置回
+  // null，否则后续每一轮（生成方案后還会一直复用同一个serviceTier
+  // 继续走generatePlan）都会被误判成"刚设定"、重复拼接这句话。
+  pendingServiceAck: Annotation({
     reducer: (_left, right) => right,
-    default: () => false,
+    default: () => null,
   }),
 });
 

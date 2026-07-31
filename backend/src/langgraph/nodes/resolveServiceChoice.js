@@ -16,6 +16,14 @@ const { getMessageText, findLastUserMessage } = require('../utils/messages');
 
 const MAX_ASK_COUNT = 2;
 
+// 用户刚设定完推送时间这句"已帮你设置好"的呼应，走确定性模板而不是
+// 交给generatePlan的LLM调用现场生成——跟价格条款走确定性模板是同一个
+// 思路，纯字符串拼接，不需要走formatGuard检测（不含加粗/列表/emoji/
+// 排比句这些格式违规的可能）。
+function buildScheduleAckMessage(scheduleText) {
+  return `已经帮你设置好啦，${scheduleText}会准时给你推送饮食提醒。`;
+}
+
 const ChoiceSchema = z.object({
   choice: z
     .enum(['free', 'subscribe', 'unclear'])
@@ -108,7 +116,7 @@ async function resolveScheduleStage(state, pending) {
       serviceTier: 'subscribed',
       pushSchedule: scheduleText,
       pendingServiceChoice: null,
-      justSetPushSchedule: true,
+      pendingServiceAck: buildScheduleAckMessage(scheduleText),
     };
   }
   if (outcome === 'decline') {
