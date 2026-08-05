@@ -15,30 +15,66 @@
 // - stage 'schedule'：第一次问推送时间，或者用户上次没讲清楚具体时间、
 //   简短重问一次。
 const { buildPushServiceClause } = require('../../pricingConfig');
+const { getMessageRole, getMessageText } = require('../utils/messages');
+const { getUndeliveredMuscleGoalGuidance } = require('../goalGuidance');
+
+const MALE_SELF_DISCLOSURE_REGEX = /(?:(?:我是|本人是|我算是|性别(?:是|为)?)[^。！？]{0,8}(?:男大学生|男学生|男生|男性|男的)|(?:^|[，,。！？!?；;：:\s])(?:在校)?男大学生(?:[，,。！？!?；;：:\s]|$))/;
+const MALE_FREE_ONLY_MESSAGE =
+  '目前长期饮食定制和阶段调整主要面向想减脂、塑形的在校女生。你仍然可以使用免费的科学饮食问答，' +
+  '我也会根据刚才收集的信息先给你第一版基础方案，但暂时不会进入长期跟踪调整。';
+
+function isMaleUser(messages) {
+  return messages
+    .filter((message) => getMessageRole(message) === 'human')
+    .some((message) => MALE_SELF_DISCLOSURE_REGEX.test(getMessageText(message)));
+}
 
 const SERVICE_BOUNDARY_MESSAGE =
-  '在给你出方案之前，先跟你说清楚我们能做什么——如果是饮食建议的话可以随时来问我，这个功能是免费的哈，' +
-  '我不会自动推送信息给你，你想到了就来找我聊；如果是想针对身材目标做定期、结构化的饮食调整，你可以开启' +
-  '信息推送服务，我会按你设定的时间提醒你当天的饮食安排。' +
+  '在给你第一版方案之前，先跟你说清楚两种使用方式，不管选哪一种，我都会先根据刚才的信息给你今天的第一版方案。' +
+  '你可以选择免费的科学饮食问答：我会保留你的基础档案，你有问题时随时来问，但不会根据时间持续跟进或主动调整方案；' +
+  '也可以选择长期规划服务：我会建立持续更新的长期档案，按你设定的时间跟进，并结合每个阶段的记录逐步调整饮食方案。' +
   buildPushServiceClause() +
-  '你可以先随便问问看，如果想开通推送随时告诉我就行～';
+  '你更想先用哪一种呢？';
 
 const SERVICE_CHOICE_RETRY_MESSAGE =
-  '不好意思，刚才没太听明白～你想先用免费的饮食问答就好，还是要开通那个定期推送服务，告诉我一声就行～';
+  '不好意思，刚才没太听明白～告诉我你想选免费的科学饮食问答，或者长期规划服务就好。';
 
 const SCHEDULE_QUESTION_MESSAGE =
-  '好嘞，那你想设定什么时候提醒你呢，跟我说个大概时间就行～';
+  '饮食提醒就是我按你选的时间来问问“今天吃得怎么样”或者“下一餐想吃什么”，' +
+  '你需要时我再结合当天情况帮你调整，不会一直打扰你～你希望每天、隔天、只在工作日、周末，' +
+  '还是每周一次？再告诉我大概几点就行。';
+
+const SUBSCRIPTION_ONBOARDING_OVERVIEW =
+  '好～接下来还有三小项，大概两三分钟就能说完：\n\n' +
+  '1. 饮食提醒的频率和时间\n' +
+  '2. 年龄、身高、体重等基础信息\n' +
+  '3. 经期和近期身体状态\n\n' +
+  '我们一项一项来，不用一次全填完～';
 
 const SCHEDULE_RETRY_MESSAGE =
-  '不好意思，没太听清楚具体时间，你希望我大概几点提醒你呀，说个大概时间就行～';
+  '不好意思，刚才的提醒安排还没听清楚～你可以告诉我多久提醒一次，再补充一个大概时间，比如工作日晚上或者每周日上午。';
 
 async function askServiceChoice(state) {
   const pending = state.pendingServiceChoice;
 
   if (!pending) {
+    const muscleGoalGuidance = getUndeliveredMuscleGoalGuidance(state);
+    if (isMaleUser(state.messages)) {
+      return {
+        messages: [muscleGoalGuidance, MALE_FREE_ONLY_MESSAGE]
+          .filter(Boolean)
+          .map((content) => ({ role: 'ai', content })),
+        serviceTier: 'free',
+        pendingServiceChoice: null,
+        ...(muscleGoalGuidance ? { muscleGoalGuidanceDelivered: true } : {}),
+      };
+    }
     return {
-      messages: [{ role: 'ai', content: SERVICE_BOUNDARY_MESSAGE }],
+      messages: [muscleGoalGuidance, SERVICE_BOUNDARY_MESSAGE]
+        .filter(Boolean)
+        .map((content) => ({ role: 'ai', content })),
       pendingServiceChoice: { stage: 'choice', askedCount: 1 },
+      ...(muscleGoalGuidance ? { muscleGoalGuidanceDelivered: true } : {}),
     };
   }
 
@@ -51,7 +87,10 @@ async function askServiceChoice(state) {
 
   const isFirstScheduleAsk = (pending.askedCount || 0) === 0;
   return {
-    messages: [{ role: 'ai', content: isFirstScheduleAsk ? SCHEDULE_QUESTION_MESSAGE : SCHEDULE_RETRY_MESSAGE }],
+    messages: (isFirstScheduleAsk
+      ? [SUBSCRIPTION_ONBOARDING_OVERVIEW, SCHEDULE_QUESTION_MESSAGE]
+      : [SCHEDULE_RETRY_MESSAGE]
+    ).map((content) => ({ role: 'ai', content })),
     pendingServiceChoice: { ...pending, askedCount: (pending.askedCount || 0) + 1 },
   };
 }
@@ -62,4 +101,7 @@ module.exports = {
   SERVICE_CHOICE_RETRY_MESSAGE,
   SCHEDULE_QUESTION_MESSAGE,
   SCHEDULE_RETRY_MESSAGE,
+  SUBSCRIPTION_ONBOARDING_OVERVIEW,
+  MALE_FREE_ONLY_MESSAGE,
+  isMaleUser,
 };

@@ -16,6 +16,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { MemorySaver } = require('@langchain/langgraph');
 const { workflow } = require('../langgraph/graph');
+const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 
 const router = express.Router();
 
@@ -31,6 +32,32 @@ function getMessageRole(message) {
     return message._getType() === 'human' ? 'human' : message._getType();
   }
   return undefined;
+}
+
+function sanitizeUserVisibleReply(text) {
+  const normalizedCommonTerms = String(text || '')
+    .replace(/\bOK\b/gi, '可以')
+    .replace(/\bAI\b/g, '智能秘书');
+  const sanitized = sanitizeEnglish(normalizedCommonTerms).replace(/(?:—+|－{2,}|-{2,})/g, '，');
+  return formatLongReplyForReadability(sanitized);
+}
+
+function formatLongReplyForReadability(text) {
+  const value = String(text || '').trim();
+  if (value.length <= 180 || value.includes('\n')) return value;
+  const sentences = value.match(/[^。！？!?]+[。！？!?～~]?/g) || [value];
+  const paragraphs = [];
+  let current = '';
+  sentences.forEach((sentence) => {
+    if (current && current.length + sentence.length > 85) {
+      paragraphs.push(current.trim());
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  });
+  if (current.trim()) paragraphs.push(current.trim());
+  return paragraphs.join('\n\n');
 }
 
 router.post('/', async (req, res, next) => {
@@ -55,13 +82,19 @@ router.post('/', async (req, res, next) => {
       config
     );
 
-    const lastMessage = result.messages[result.messages.length - 1];
-    const reply = lastMessage && getMessageRole(lastMessage) !== 'human' ? lastMessage.content : '';
+    const lastHumanIndex = result.messages.map((item) => getMessageRole(item)).lastIndexOf('human');
+    const replies = result.messages
+      .slice(lastHumanIndex + 1)
+      .filter((item) => getMessageRole(item) !== 'human' && item.content)
+      .map((item) => sanitizeUserVisibleReply(item.content));
+    const reply = replies[replies.length - 1] || '';
 
     res.json({
       reply,
+      replies,
       threadId: resolvedThreadId,
       slots: result.slots,
+      cafeteriaMode: result.slots?.cafeteriaMode?.value || null,
       isComplete: result.isComplete,
       // isComplete 现在只代表"六项信息问完"，不代表方案已经生成——
       // 六项问完之后还要先经过 askServiceChoice 这一步，plan 是否真的
@@ -70,6 +103,10 @@ router.post('/', async (req, res, next) => {
       // 的状态。
       serviceTier: result.serviceTier,
       pushSchedule: result.pushSchedule,
+      bodyOnboardingStatus: result.bodyOnboardingStatus,
+      bodyProfile: result.bodyProfile || {},
+      cycleOnboardingStatus: result.cycleOnboardingStatus,
+      menstrualProfile: result.menstrualProfile,
       retrieved: result.retrieved || [],
     });
   } catch (err) {
@@ -78,3 +115,5 @@ router.post('/', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.sanitizeUserVisibleReply = sanitizeUserVisibleReply;
+module.exports.formatLongReplyForReadability = formatLongReplyForReadability;

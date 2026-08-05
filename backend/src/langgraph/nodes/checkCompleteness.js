@@ -16,7 +16,11 @@
 const { SLOT_KEYS } = require('../state');
 
 function checkCompleteness(state) {
-  const nextSlotToAsk = SLOT_KEYS.find((key) => !state.slots[key]?.confirmed) || null;
+  let nextSlotToAsk = SLOT_KEYS.find((key) => !state.slots[key]?.confirmed) || null;
+  const sceneIsCafeteria = state.slots.scene?.confirmed && state.slots.scene.value?.includes('食堂');
+  if (sceneIsCafeteria && !state.slots.cafeteriaMode?.confirmed) {
+    nextSlotToAsk = 'cafeteriaMode';
+  }
   const isComplete = nextSlotToAsk === null;
 
   if (process.env.LANGGRAPH_DEBUG) {

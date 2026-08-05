@@ -269,6 +269,7 @@ let langgraphTurns = []; // [{ role, text }]
 // "新建对话"会让 conversationEpoch 递增，用来识别"存档/重置前发出、
 // 之后才返回"的过期请求，避免这类请求的回调把内容写回已经清空的状态里。
 let conversationEpoch = 0;
+const LANGGRAPH_REPLY_GAP_MS = 2500;
 
 let currentModalArchiveId = null;
 
@@ -372,8 +373,17 @@ async function askLanggraph(message, epoch) {
     if (epoch !== conversationEpoch) return; // 已经新建对话，这个回复已经过期，丢弃
 
     langgraphThreadId = data.threadId || langgraphThreadId;
+    const replies = Array.isArray(data.replies) && data.replies.length ? data.replies : [data.reply];
     delete pendingTurn.pending;
-    pendingTurn.text = data.reply;
+    pendingTurn.text = replies[0] || '';
+    const pendingIndex = langgraphTurns.indexOf(pendingTurn);
+    renderLanggraphLog();
+    for (let index = 1; index < replies.length; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, LANGGRAPH_REPLY_GAP_MS));
+      if (epoch !== conversationEpoch) return;
+      langgraphTurns.splice(pendingIndex + index, 0, { role: 'assistant', text: replies[index] });
+      renderLanggraphLog();
+    }
   } catch (err) {
     if (epoch !== conversationEpoch) return;
     delete pendingTurn.pending;

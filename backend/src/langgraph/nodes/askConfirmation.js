@@ -16,6 +16,11 @@
 // 应该自动放弃这次确认，把主动权还给对话，不能无限期卡住整个流程。
 const { model } = require('../model');
 const { SLOT_LABELS } = require('../state');
+const { findLastUserMessage, getMessageText } = require('../utils/messages');
+const { FIRST_TURN_INTRO, getFixedProductAnswer, isFirstConversationTurn } = require('./askNextQuestion');
+const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
+
+const SIDE_QUESTION_REGEX = /[？?]|(吗|嘛|么|为什么|怎么|如何|什么意思|能不能|可不可以|有没有)[。！!～~]?$/;
 
 async function askConfirmation(state) {
   const pending = state.pendingConfirmation;
@@ -41,11 +46,50 @@ async function askConfirmation(state) {
     },
   ];
 
-  const response = await model.invoke(prompt);
+  let response;
+  if (pending.reason?.type === 'dish_flavor_inference') {
+    response = {
+      content: `${pending.reason.dishName}通常会做得${pending.reason.inferredTaste}，我先理解成你喜欢带辣的口味，对吗？`,
+    };
+  } else if (pending.reason?.type === 'dish_collection_inference') {
+    response = {
+      content:
+        `我会把之前说的食物和${pending.reason.dishName}都保留在口味清单里，不会覆盖掉。` +
+        `${pending.reason.dishName}通常偏${pending.reason.inferredTaste}，我先综合理解成你也喜欢${pending.reason.inferredTaste}口味，对吗？`,
+    };
+  } else if (pending.field === 'goal' && isFirstTimeSurprise) {
+    response = { content: `我确认一下，你目前的身材目标是“${pending.newValue}”，对吗？` };
+  } else {
+    response = await model.invoke(prompt);
+  }
+  const lastUserText = getMessageText(findLastUserMessage(state.messages));
+  const fixedAnswer = getFixedProductAnswer(lastUserText);
+  let sideAnswer = null;
+  if (!fixedAnswer && SIDE_QUESTION_REGEX.test(lastUserText.trim())) {
+    const sideResponse = await model.invoke([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content:
+          '用户没有直接回答当前待确认问题，而是在追问秘书上一句话。先只回答用户现在追问的内容，控制在一到两句话，' +
+          '不要忽略问题，不要继续信息采集，不要使用破折号或连续横线；待确认问题会由下一条独立消息继续询问。',
+      },
+      ...state.messages,
+    ]);
+    sideAnswer = String(sideResponse.content || '').trim();
+  }
+  const firstTurnIntro = isFirstConversationTurn(state.messages) ? FIRST_TURN_INTRO : null;
+  const openingMessage = [firstTurnIntro, fixedAnswer || sideAnswer].filter(Boolean).join('\n');
+  const replyMessages = [openingMessage, response.content].filter(Boolean);
+  if (state.emotionalSupportDeliveredThisTurn && replyMessages.length > 0) {
+    const lastIndex = replyMessages.length - 1;
+    replyMessages[lastIndex] = `如果你愿意，我们先从你刚提到的这件事聊起，好吗？${replyMessages[lastIndex]}`;
+  }
 
   return {
-    messages: [{ role: 'ai', content: response.content }],
+    messages: replyMessages.map((content) => ({ role: 'ai', content })),
     pendingConfirmation: { ...pending, askedCount },
+    ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
   };
 }
 

@@ -32,6 +32,13 @@ const EMOJI_REGEX = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 //   匹配，不需要语义判断。
 const MARKDOWN_HEADING_REGEX = /^#{1,6}\s+\S/m;
 const BANNED_ADDRESS_TERMS = ['乖乖'];
+const ROBOTIC_DASH_REGEX = /(?:—+|－{2,}|-{2,})/;
+const UNSUPPORTED_NUTRITION_EQUIVALENCE_REGEX =
+  /(?:(?:热量|营养(?:结构)?)[^。！？!?\n]{0,16}(?:接近|差不多|相同|一样|等同)|(?:等量|等价)替换)/;
+const INCONSISTENT_PORTION_EQUIVALENCE_REGEX =
+  /一掌[^。！？!?\n]{0,24}(?:也就是|相当于)[^。！？!?\n]{0,12}(?:片|块)/;
+const FIXED_PIECE_COUNT_FOR_MIXED_DISH_REGEX =
+  /(?:小炒肉|肉片|肉丝|鸡丁|鱼香肉丝|宫保鸡丁)[^。！？!?\n]{0,30}(?:吃|挑|夹)(?:两三|三四|四五|五六|[二三四五六七八九十]+)(?:片|块|颗|丁)/;
 
 /**
  * 检测一段回复文本里有没有出现已知的八类违规。
@@ -83,6 +90,31 @@ function detectFormatViolations(text, { userMessages = [] } = {}) {
     violations.push({ type: 'emoji', detail: '出现了emoji表情符号' });
   }
 
+  if (ROBOTIC_DASH_REGEX.test(text)) {
+    violations.push({ type: 'robotic_dash', detail: '破折号或连续横线' });
+  }
+
+  if (UNSUPPORTED_NUTRITION_EQUIVALENCE_REGEX.test(text)) {
+    violations.push({
+      type: 'unsupported_nutrition_equivalence',
+      detail: '仅凭菜名断言替代菜热量或营养结构接近',
+    });
+  }
+
+  if (INCONSISTENT_PORTION_EQUIVALENCE_REGEX.test(text)) {
+    violations.push({
+      type: 'inconsistent_portion_equivalence',
+      detail: '把一掌大小直接换算成固定片数或块数',
+    });
+  }
+
+  if (FIXED_PIECE_COUNT_FOR_MIXED_DISH_REGEX.test(text)) {
+    violations.push({
+      type: 'fixed_piece_count_for_mixed_dish',
+      detail: '用固定片数或块数规定混合炒菜的肉量',
+    });
+  }
+
   if (userMessages.length > 0) {
     const combinedUserText = userMessages.join('\n');
     let match;
@@ -121,6 +153,14 @@ function buildRetryInstruction(violations) {
           return '不要使用任何emoji表情符号装饰，改成纯文字表达语气';
         case 'fabricated_quote':
           return `不要用引号编造用户没说过的话（上一次生成里检测到疑似编造: "${v.detail}"），只有用户真实说过的原话才能用引号引用`;
+        case 'robotic_dash':
+          return '不要使用破折号或连续横线，改用逗号、句号或者自然的连接词';
+        case 'unsupported_nutrition_equivalence':
+          return '不能仅凭菜名断言两道食堂菜的热量或营养结构接近；要说明不同窗口的用油、糖、配方和分量会变化，只能按实际拿到的菜判断';
+        case 'inconsistent_portion_equivalence':
+          return '不要把“一掌大小”直接换算成固定的几片或几块，因为每个食堂切片大小不同；保留一种生活化分量描述即可';
+        case 'fixed_piece_count_for_mixed_dish':
+          return '小炒肉、肉丝、鸡丁等混合炒菜不能规定只吃固定几片或几块，因为窗口切法和每块大小不同；改用一掌大小、普通一份中的大致比例等生活化描述';
         default:
           return null;
       }
@@ -193,6 +233,11 @@ function applyLastResortFix(text, violations) {
     BANNED_ADDRESS_TERMS.forEach((term) => {
       fixed = fixed.split(term).join('');
     });
+  }
+
+
+  if (violations.some((v) => v.type === 'robotic_dash')) {
+    fixed = fixed.replace(/(?:—+|－{2,}|-{2,})/g, '，');
   }
 
   fixed = fixed.replace(/[ \t]{2,}/g, ' '); // 清理上面几类删除操作可能留下的连续空格

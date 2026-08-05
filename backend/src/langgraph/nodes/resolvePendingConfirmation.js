@@ -31,11 +31,129 @@ const structuredResolver = classifierModel.withStructuredOutput(ResolutionSchema
   name: 'resolve_pending_confirmation',
 });
 
+const ADDITION_PREFIX_REGEX = /^(?:对[，,。\s]*)?(?:还有|还喜欢|也喜欢|另外(?:还有)?|再加上|而且|同时)(.+)$/;
+const BOTH_VALUES_REGEX = /^(?:两个|两种|这些)?(?:我)?(?:都|全)(?:是|要|喜欢|可以|对)[。！!～~]?$/;
+
+function cleanSupplement(text) {
+  return String(text || '')
+    .replace(/^[，,。！？!?；;：:\s]+|[，,。！？!?；;：:～~\s]+$/g, '')
+    .replace(/^(?:我)?(?:还|也)?(?:喜欢|爱吃|会吃|会做|想要)/, '')
+    .replace(/的$/, '')
+    .trim();
+}
+
+function detectSupplementalConfirmation(pending, userText) {
+  const match = String(userText || '').trim().match(ADDITION_PREFIX_REGEX);
+  if (!match) return null;
+  const addition = cleanSupplement(match[1]);
+  if (!addition || addition.length > 60) return null;
+
+  const base = String(pending.newValue || '').replace(/，可能偏好/, '，偏好');
+  let value;
+  let acknowledgement;
+
+  switch (pending.field) {
+    case 'taste': {
+      const normalizedAddition = /甜/.test(addition) ? '甜味' : addition;
+      if (pending.reason?.type === 'dish_flavor_inference') {
+        const inferredTasteLabel = pending.reason.inferredTaste.replace(/^偏/, '') +
+          (pending.reason.inferredTaste.endsWith('味') ? '' : '味');
+        value = `喜欢${pending.reason.dishName}，偏好${inferredTasteLabel}和${normalizedAddition}`;
+        acknowledgement = `记下啦，你喜欢${pending.reason.dishName}这类${pending.reason.inferredTaste}口味，也喜欢${normalizedAddition}。`;
+      } else {
+        value = `${base}，也喜欢${normalizedAddition}`;
+        acknowledgement = `记下啦，你的口味偏好还包括${normalizedAddition}。`;
+      }
+      break;
+    }
+    case 'restrictions':
+      value = `${base}，还需避开${addition}`;
+      acknowledgement = `记下啦，${addition}也需要避开。`;
+      break;
+    case 'goal':
+      value = `${base}，也希望${addition}`;
+      acknowledgement = `记下啦，${addition}也是你在意的目标。`;
+      break;
+    case 'exercise':
+      value = `${base}，另外${addition}`;
+      acknowledgement = `记下啦，你的运动情况还包括${addition}。`;
+      break;
+    case 'scene':
+      value = `${base}，也会${addition}`;
+      acknowledgement = `记下啦，除了刚才说的就餐场景，你也会${addition}。`;
+      break;
+    case 'budget':
+      value = `${base}，另外${addition}`;
+      acknowledgement = `记下啦，预算方面还要考虑${addition}。`;
+      break;
+    case 'cafeteriaMode':
+      value = `${base}，也有${addition}`;
+      acknowledgement = `记下啦，你们食堂也有${addition}这种方式。`;
+      break;
+    default:
+      return null;
+  }
+
+  return { value, acknowledgement };
+}
+
+function mergeBothPendingValues(pending, userText) {
+  if (!pending.oldValue || !BOTH_VALUES_REGEX.test(String(userText || '').trim())) return null;
+  const oldValue = String(pending.oldValue);
+  const newPart = cleanSupplement(pending.newValue);
+  if (!newPart || oldValue.includes(newPart)) return null;
+
+  if (pending.field === 'taste') {
+    const addition = stripTasteValue(pending.newValue);
+    return {
+      value: `${oldValue}，也喜欢${addition}`,
+      acknowledgement: `明白啦，不是改口，${oldValue.replace(/^喜欢/, '')}和${addition}你都喜欢。`,
+    };
+  }
+  return {
+    value: `${oldValue}，同时${newPart}`,
+    acknowledgement: '明白啦，这两项我都帮你保留下来。',
+  };
+}
+
+function stripTasteValue(value) {
+  return String(value || '')
+    .replace(/^(?:我)?(?:还|也)?(?:喜欢吃|喜欢|爱吃|偏好)/, '')
+    .replace(/的$/, '')
+    .trim();
+}
+
 async function resolvePendingConfirmation(state) {
   const pending = state.pendingConfirmation;
   const isFirstTimeSurprise = pending.oldValue === null;
   const lastUserMessage = findLastUserMessage(state.messages);
   const userText = getMessageText(lastUserMessage);
+  const confirmationQueue = state.pendingConfirmationQueue || [];
+
+  const supplemental = detectSupplementalConfirmation(pending, userText) || mergeBothPendingValues(pending, userText);
+  if (supplemental) {
+    const [nextPending, ...remaining] = confirmationQueue;
+    return {
+      messages: [{ role: 'ai', content: supplemental.acknowledgement }],
+      slots: { [pending.field]: { value: supplemental.value, confirmed: true } },
+      pendingConfirmation: nextPending || null,
+      pendingConfirmationQueue: remaining,
+      resumePreviousQuestion:
+        !nextPending && Boolean(state.lastAskedSlot) && state.lastAskedSlot !== pending.field,
+      skipCandidateFieldsOnce: [pending.field],
+    };
+  }
+
+  function advanceConfirmation(extra = {}) {
+    const [nextPending, ...remaining] = confirmationQueue;
+    return {
+      ...extra,
+      pendingConfirmation: nextPending || null,
+      pendingConfirmationQueue: remaining,
+      resumePreviousQuestion:
+        !nextPending && Boolean(state.lastAskedSlot) && state.lastAskedSlot !== pending.field,
+    };
+  }
 
   const prompt = [
     {
@@ -55,10 +173,9 @@ async function resolvePendingConfirmation(state) {
   const { resolution } = await structuredResolver.invoke(prompt);
 
   if (resolution === 'confirmed') {
-    return {
+    return advanceConfirmation({
       slots: { [pending.field]: { value: pending.newValue, confirmed: true } },
-      pendingConfirmation: null,
-    };
+    });
   }
 
   // 意外字段的首次候选值被否认/放弃时，不能落地成 {value: oldValue,
@@ -72,10 +189,9 @@ async function resolvePendingConfirmation(state) {
       : { value: pending.oldValue, confirmed: true };
 
   if (resolution === 'rejected') {
-    return {
+    return advanceConfirmation({
       slots: { [pending.field]: revertSlot() },
-      pendingConfirmation: null,
-    };
+    });
   }
 
   // unclear：如果已经问过太多次还是没能得到明确回应，不再追问，按
@@ -86,13 +202,16 @@ async function resolvePendingConfirmation(state) {
       // eslint-disable-next-line no-console
       console.log(`[resolvePendingConfirmation] ${pending.field} 已经问了${pending.askedCount}次还是不清楚，放弃这次确认，恢复原状`);
     }
-    return {
+    return advanceConfirmation({
       slots: { [pending.field]: revertSlot() },
-      pendingConfirmation: null,
-    };
+    });
   }
 
   return {};
 }
 
-module.exports = { resolvePendingConfirmation };
+module.exports = {
+  resolvePendingConfirmation,
+  detectSupplementalConfirmation,
+  mergeBothPendingValues,
+};

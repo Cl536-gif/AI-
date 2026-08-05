@@ -2,16 +2,14 @@
 // 复现测试：Bug 1（scene误判）修复验证。
 //
 // 直接测 extractSlots：场景已确认是"食堂"，用户在回答"口味"问题时，
-// 说了"自选"这个词——这个词本该完全跟场景无关（它说的是食堂内部的
-// 打饭方式，不是食堂/外卖这个场景本身），修复前会被误判成对scene的
-// 候选值，触发不必要的确认。同时测"固定套餐"这个同类型的词，确认
-// 修复不是只堵住了"自选"这一个具体词。
+// 说了"自选"这个词——它不应被误判成scene，而应进入独立的
+// cafeteriaMode后台字段。同时测"固定套餐"这个同类型词。
 //
 // 运行：cd backend && LANGGRAPH_DEBUG=1 node src/langgraph/manual-tests/scenario8-scene-false-trigger.js
 const { extractSlots } = require('../nodes/extractSlots');
 const { createInitialSlots } = require('../state');
 
-async function testWord(word) {
+async function testWord(word, expectedMode) {
   const slots = createInitialSlots();
   slots.scene = { value: '食堂', confirmed: true };
 
@@ -23,19 +21,21 @@ async function testWord(word) {
 
   console.log(`用户说"${word}" -> candidateSlots:`, JSON.stringify(result.candidateSlots));
   const triggeredScene = Object.prototype.hasOwnProperty.call(result.candidateSlots, 'scene');
-  console.log(triggeredScene ? '❌ 仍然误判成了scene候选值（有问题）' : '✅ 没有误判成scene候选值（符合预期）');
-  return !triggeredScene;
+  const capturedMode = result.candidateSlots.cafeteriaMode === expectedMode;
+  console.log(triggeredScene ? '❌ 仍然误判成了scene候选值' : '✅ 没有误判成scene候选值');
+  console.log(capturedMode ? `✅ 正确保存为cafeteriaMode=${expectedMode}` : '❌ 没有正确保存食堂打饭方式');
+  return !triggeredScene && capturedMode;
 }
 
 async function main() {
   console.log('=== 测试1：自选 ===');
-  const r1 = await testWord('自选');
+  const r1 = await testWord('自选', '自己挑菜');
 
   console.log('\n=== 测试2：固定套餐 ===');
-  const r2 = await testWord('固定套餐');
+  const r2 = await testWord('固定套餐', '固定套餐');
 
   console.log('\n=== 总结 ===');
-  console.log(r1 && r2 ? '两个词都通过，Bug 1 修复验证成功' : '仍有词触发了误判，Bug 1 没有完全修复');
+  console.log(r1 && r2 ? '两个词都正确进入独立后台字段' : '食堂打饭方式抽取仍有问题');
 }
 
 main().catch((err) => {

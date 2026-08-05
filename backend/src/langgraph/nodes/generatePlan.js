@@ -80,11 +80,59 @@ function stripLeadingParenthetical(text) {
 // 数字，不用重新推导。
 const MIN_PLAN_LENGTH = 20;
 const NO_PLAN_FALLBACK_TEXT = '这顿的具体搭配我再想想，你先说说刚才这几项信息有没有需要补充的～';
+const MEAL_TIMING_CLOSING =
+  '这份搭配适合午餐或晚餐；如果想安排早餐，告诉我，我会另外给你早餐方案～';
+
+function normalizeMealTimingClosing(text) {
+  const withoutQuestion = String(text || '')
+    .replace(
+      /(?:这顿|这份(?:搭配|方案)?)[^。！？\n]{0,40}(?:中午|午餐)[^。！？\n]{0,30}(?:晚上|晚餐)[^。！？\n]*[？?][^。！？\n]*[。！？～~]?/g,
+      ''
+    )
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (/适合(?:午餐|中餐)(?:或|和)(?:晚餐|晚饭)/.test(withoutQuestion) && /早餐/.test(withoutQuestion)) {
+    return withoutQuestion;
+  }
+  return `${withoutQuestion}\n\n${MEAL_TIMING_CLOSING}`.trim();
+}
+const BODY_ONBOARDING_QUESTION =
+  '接下来再了解几项基础信息，我会用来帮你把饮食安排得更贴合：\n\n' +
+  '1. 年龄，例如22岁\n' +
+  '2. 身高，例如165厘米\n' +
+  '3. 当前体重，例如55公斤或110斤\n' +
+  '4. 平时活动情况，例如久坐、走动较多\n\n' +
+  '如果你想跟我说，也可以加上目标体重和最近一个月的体重变化。' +
+  '可以像“22岁、165厘米、55公斤、平时久坐”这样一次告诉我～';
+const CYCLE_ONBOARDING_QUESTION =
+  '接下来再了解一下经期情况，这会帮助我结合你的个人节奏安排饮食：\n\n' +
+  '1. 周期大致规律还是不规律\n' +
+  '2. 最近一次月经开始日期\n' +
+  '3. 如果记得，前两次大概什么时候开始\n' +
+  '4. 经期前后是否容易饿、疲劳、腹胀或疼痛\n\n' +
+  '有月经的话，按你记得的告诉我就好；没有月经或暂时不方便提供，也直接跟我说。' +
+  '后面我会结合你的周期和实际状态，适当调整饮食，帮助你应对容易饿、疲劳或腹胀这些变化。';
 
 async function generatePlan(state) {
   const query = buildRetrievalQuery(state.slots);
   const perKb = await localKbBridge.retrieveFromKbs(query, config.localKbNames);
   const knowledgeSections = formatKnowledgeSections(perKb);
+  const cafeteriaModeInstruction = state.slots.cafeteriaMode?.confirmed
+    ? `食堂打饭方式（后台信息，不要放进六项复述）：${state.slots.cafeteriaMode.value}。` +
+      (state.slots.cafeteriaMode.value === '自己挑菜'
+        ? '方案要直接帮助用户搭配主食、菜和生活化分量，并给出窗口选菜时的实际做法。\n\n'
+        : '方案要以窗口已经配好的整份套餐为前提，重点说明拿到套餐后怎么取舍、吃多少和如何替换，不能假设用户可以自由组合每一道菜。\n\n')
+    : '';
+  const serviceClosingInstruction =
+    state.serviceTier === 'subscribed'
+      ? '这版方案的结尾要明确告诉用户：先按这版试试看，不用一下子改得太多；' +
+        '之后秘书会结合长期记录分阶段调整，陪用户一步一步找到更适合自己的吃法。' +
+        '不要把这层意思简化成“分量不够可以自己调整”。\n\n'
+      : '这版方案的结尾要明确告诉用户：先按这版试试看，不用一下子改得太多；' +
+        '如果吃完仍然觉得饿，晚一点可以适当加一点，不用硬扛，有问题可以再来问。' +
+        '不能承诺按时间持续跟进、主动调整或分阶段规划。不要把这层意思简化成' +
+        '“分量不够可以自己调整”。\n\n';
 
   const taskInstruction =
     (state.pendingServiceAck
@@ -103,6 +151,8 @@ async function generatePlan(state) {
     '这一次的方案，不要甩出多日框架）。\n\n' +
     '已经确认的信息：\n' +
     `${formatConfirmedSlots(state.slots)}\n\n` +
+    cafeteriaModeInstruction +
+    serviceClosingInstruction +
     (knowledgeSections.length > 0
       ? `可参考的知识库资料：\n${knowledgeSections.join('\n\n')}\n\n` +
         '资料里的对话示例、话术模板只是参考语气用的，不能原样搬进回复里，' +
@@ -121,7 +171,13 @@ async function generatePlan(state) {
     '不要健身向/小众菜品）、第17/23条（分量用"一拳米饭""一掌蔬菜"这类' +
     '生活化类比，禁止精确克数）、第43条（食堂场景下每道菜都要主动带一句' +
     '"如果食堂没有，换成XX"的替代方案，不能默认用户能自己控制烹饪方式）、' +
-    '第41条（举例按类别就够，不用过度细化到具体口味/品类）。';
+    '第41条（举例按类别就够，不用过度细化到具体口味/品类）。另外，不能把' +
+    '“一掌大小”直接换算成固定几片或几块，不同窗口切片大小不同；也不能仅凭' +
+    '菜名声称替代菜与原菜热量、营养结构相同或接近，不同食堂的用油、糖、配方' +
+    '和分量都可能不同。小炒肉、肉丝、鸡丁等大小不固定的混合炒菜，也不能说' +
+    '“只吃三四片/几块就够了”，要使用一种生活化的整体分量描述。方案结尾不要' +
+    '再问用户安排午餐还是晚餐，直接说明“这份搭配适合午餐或晚餐；如果想安排早餐，告诉我，我会另外给早餐方案”，' +
+    '因为早餐的食物结构和分量需要单独安排。';
 
   const userMessages = state.messages
     .filter((m) => getMessageRole(m) === 'human')
@@ -151,7 +207,9 @@ async function generatePlan(state) {
   // 不管走免费还是订阅分支，剥离完呼应/括号说明之后再统一做一次内容
   // 完整性兜底，具体逻辑和阈值依据见 MIN_PLAN_LENGTH 的注释。
   const isPlanMissing = strippedReplyText.trim().length < MIN_PLAN_LENGTH;
-  const replyText = isPlanMissing ? NO_PLAN_FALLBACK_TEXT : strippedReplyText;
+  const replyText = isPlanMissing
+    ? NO_PLAN_FALLBACK_TEXT
+    : normalizeMealTimingClosing(strippedReplyText);
 
   if (process.env.LANGGRAPH_DEBUG && isPlanMissing) {
     // eslint-disable-next-line no-console
@@ -166,6 +224,8 @@ async function generatePlan(state) {
   // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
   // 不含加粗/列表/emoji/排比句这些违规的可能）。
   const finalText = state.pendingServiceAck ? `${state.pendingServiceAck}\n\n${replyText}` : replyText;
+  const shouldAskBodyOnboarding =
+    state.serviceTier === 'subscribed' && state.bodyOnboardingStatus === null;
 
   if (process.env.LANGGRAPH_DEBUG) {
     // eslint-disable-next-line no-console
@@ -180,14 +240,30 @@ async function generatePlan(state) {
   }
 
   return {
-    messages: [{ role: 'ai', content: finalText }],
+    messages: [
+      { role: 'ai', content: finalText },
+      ...(shouldAskBodyOnboarding ? [{ role: 'ai', content: BODY_ONBOARDING_QUESTION }] : []),
+    ],
     retrieved: perKb,
+    initialPlanDelivered: true,
     // 不管这一轮有没有用上pendingServiceAck，都要显式重置回null——
     // generatePlan六项确认完之后每一轮都会再次被路由到（同一个serviceTier
     // 会一直复用），不重置的话下一轮会被误判成"又刚设定了一次"，重复
     // 拼接这句话。
     pendingServiceAck: null,
+    ...(shouldAskBodyOnboarding
+      ? {
+          bodyOnboardingStatus: 'asked',
+          pendingBodyOnboarding: { askedCount: 1 },
+        }
+      : {}),
   };
 }
 
-module.exports = { generatePlan };
+module.exports = {
+  generatePlan,
+  BODY_ONBOARDING_QUESTION,
+  CYCLE_ONBOARDING_QUESTION,
+  MEAL_TIMING_CLOSING,
+  normalizeMealTimingClosing,
+};

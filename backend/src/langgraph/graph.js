@@ -28,11 +28,17 @@ const { checkCompleteness } = require('./nodes/checkCompleteness');
 const { askNextQuestion } = require('./nodes/askNextQuestion');
 const { askServiceChoice } = require('./nodes/askServiceChoice');
 const { resolveServiceChoice } = require('./nodes/resolveServiceChoice');
+const { resolveCycleOnboarding } = require('./nodes/resolveCycleOnboarding');
+const { resolveBodyOnboarding } = require('./nodes/resolveBodyOnboarding');
 const { generatePlan } = require('./nodes/generatePlan');
+const { provideEmotionalSupport } = require('./nodes/provideEmotionalSupport');
+const { answerFollowUp } = require('./nodes/answerFollowUp');
 
 function routeEntry(state) {
   if (state.pendingConfirmation) return 'resolvePendingConfirmation';
   if (state.pendingServiceChoice) return 'resolveServiceChoice';
+  if (state.pendingBodyOnboarding) return 'resolveBodyOnboarding';
+  if (state.pendingCycleOnboarding) return 'resolveCycleOnboarding';
   return 'extractSlots';
 }
 
@@ -46,6 +52,7 @@ function routeAfterConflictCheck(state) {
 function routeAfterCompleteness(state) {
   if (!state.isComplete) return 'askNextQuestion';
   if (state.serviceTier === null) return 'askServiceChoice';
+  if (state.initialPlanDelivered) return 'answerFollowUp';
   return 'generatePlan';
 }
 
@@ -57,7 +64,13 @@ function routeAfterServiceChoice(state) {
   return state.pendingServiceChoice ? 'askServiceChoice' : 'generatePlan';
 }
 
+function routeAfterAskingServiceChoice(state) {
+  return state.pendingServiceChoice ? '__end__' : 'generatePlan';
+}
+
 const workflow = new StateGraph(DietState)
+  .addNode('provideEmotionalSupport', provideEmotionalSupport)
+  .addNode('answerFollowUp', answerFollowUp)
   .addNode('resolvePendingConfirmation', resolvePendingConfirmation)
   .addNode('extractSlots', extractSlots)
   .addNode('conflictRouter', conflictRouter)
@@ -66,10 +79,15 @@ const workflow = new StateGraph(DietState)
   .addNode('askNextQuestion', askNextQuestion)
   .addNode('askServiceChoice', askServiceChoice)
   .addNode('resolveServiceChoice', resolveServiceChoice)
+  .addNode('resolveBodyOnboarding', resolveBodyOnboarding)
+  .addNode('resolveCycleOnboarding', resolveCycleOnboarding)
   .addNode('generatePlan', generatePlan)
-  .addConditionalEdges('__start__', routeEntry, {
+  .addEdge('__start__', 'provideEmotionalSupport')
+  .addConditionalEdges('provideEmotionalSupport', routeEntry, {
     resolvePendingConfirmation: 'resolvePendingConfirmation',
     resolveServiceChoice: 'resolveServiceChoice',
+    resolveBodyOnboarding: 'resolveBodyOnboarding',
+    resolveCycleOnboarding: 'resolveCycleOnboarding',
     extractSlots: 'extractSlots',
   })
   .addEdge('resolvePendingConfirmation', 'extractSlots')
@@ -82,15 +100,22 @@ const workflow = new StateGraph(DietState)
     askNextQuestion: 'askNextQuestion',
     askServiceChoice: 'askServiceChoice',
     generatePlan: 'generatePlan',
+    answerFollowUp: 'answerFollowUp',
   })
   .addConditionalEdges('resolveServiceChoice', routeAfterServiceChoice, {
     askServiceChoice: 'askServiceChoice',
     generatePlan: 'generatePlan',
   })
   .addEdge('askNextQuestion', '__end__')
-  .addEdge('askServiceChoice', '__end__')
+  .addConditionalEdges('askServiceChoice', routeAfterAskingServiceChoice, {
+    __end__: '__end__',
+    generatePlan: 'generatePlan',
+  })
   .addEdge('generatePlan', '__end__')
-  .addEdge('askConfirmation', '__end__');
+  .addEdge('answerFollowUp', '__end__')
+  .addEdge('resolveBodyOnboarding', '__end__')
+  .addEdge('askConfirmation', '__end__')
+  .addEdge('resolveCycleOnboarding', '__end__');
 
 const graph = workflow.compile();
 

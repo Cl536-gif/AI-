@@ -16,4 +16,23 @@ function buildPushServiceClause() {
   return `这部分有${pushService.trialDays}天免费试用，${priceClause}。`;
 }
 
-module.exports = { pushService, buildPushServiceClause };
+function buildServiceBoundaryAnswer() {
+  return (
+    '基础档案、科学饮食问答和第一版方案是免费的；长期规划服务包含持续更新的长期档案、定期跟进和阶段性方案调整。' +
+    buildPushServiceClause()
+  );
+}
+
+function buildReminderCapabilityAnswer() {
+  return (
+    '可以，如果你选择长期规划服务，我会按照你设定的频率和时间提醒，并结合记录做阶段性调整；' +
+    '免费的科学饮食问答不会主动推送提醒。'
+  );
+}
+
+module.exports = {
+  pushService,
+  buildPushServiceClause,
+  buildServiceBoundaryAnswer,
+  buildReminderCapabilityAnswer,
+};

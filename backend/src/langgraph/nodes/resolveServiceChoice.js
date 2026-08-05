@@ -29,7 +29,7 @@ const ChoiceSchema = z.object({
     .enum(['free', 'subscribe', 'unclear'])
     .describe(
       'free：用户选择继续用免费的临时问答模式，不开通推送服务。' +
-        'subscribe：用户明确表示想开通/订阅这个定期推送服务。' +
+        'subscribe：用户明确表示想开通长期规划、长期档案、阶段调整或定期推送服务。' +
         'unclear：用户的回复没有明确表明选哪一个（比如答非所问、或者在问别的问题）。'
     ),
 });
@@ -63,7 +63,7 @@ async function resolveChoiceStage(state, pending) {
     {
       role: 'system',
       content:
-        '之前问用户是想用免费的临时饮食问答，还是想开通付费的定期结构化推送服务。' +
+        '之前问用户是想用免费的科学饮食问答，还是想开通包含长期档案、定期跟进和阶段调整的长期规划服务。' +
         '请判断用户这一轮回复选的是哪一个。',
     },
     { role: 'human', content: userText },

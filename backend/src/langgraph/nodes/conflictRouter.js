@@ -5,8 +5,9 @@
 // 太敏感，把无关的顺嘴提及也当成需要确认的冲突，制造新的啰嗦问题。
 const { z } = require('zod');
 const { classifierModel } = require('../model');
-const { SLOT_KEYS, SLOT_LABELS } = require('../state');
+const { SLOT_LABELS, TRACKED_SLOT_KEYS } = require('../state');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
+const { recognizeDish } = require('../../data/commonDishCatalog');
 
 const ClassificationSchema = z.object({
   classification: z
@@ -24,6 +25,90 @@ const ClassificationSchema = z.object({
 const structuredClassifier = classifierModel.withStructuredOutput(ClassificationSchema, {
   name: 'classify_conflict',
 });
+
+const REACTION_ONLY_REGEX = /^(吃(了|完|后)?会?)?(拉肚子|腹泻|腹胀|肚子疼|恶心|呕吐|起疹子|皮肤发痒|发痒|不舒服)[。！!～~]?$/;
+
+function mergeRestrictionReaction(oldValue, newValue, userText) {
+  if (!oldValue || !newValue || !REACTION_ONLY_REGEX.test(userText.trim())) return null;
+  const reaction = newValue.replace(/^吃(了|完|后)?会?/, '');
+  if (oldValue.includes(reaction)) return oldValue;
+  return `${oldValue}，吃后会${reaction}`;
+}
+
+const EXPLICIT_ADDITION_REGEX = /(?:哦对[，,。\s]*)?(?:还有|还喜欢|也喜欢|另外(?:还有)?|再加上|而且|同时)/;
+
+function stripPreferencePrefix(value) {
+  return String(value || '')
+    .replace(/^(?:我)?(?:还|也)?(?:喜欢吃|喜欢|爱吃|偏好)/, '')
+    .replace(/[，,。！？!?；;：:～~\s]+$/g, '')
+    .replace(/的$/, '')
+    .trim();
+}
+
+// 用户已经确认过某一项后，又主动说“哦对还有……”“另外也……”时，
+// 语义是并列补充而不是替换。这里在冲突分类模型之前做确定性合并，避免
+// “酸甜 + 还有爆辣”被误问成“现在是想改成爆辣吗”。
+function mergeExplicitAddition(field, oldValue, newValue, userText) {
+  if (!EXPLICIT_ADDITION_REGEX.test(String(userText || ''))) return null;
+  const addition = stripPreferencePrefix(newValue);
+  if (!addition || oldValue.includes(addition)) return null;
+
+  switch (field) {
+    case 'taste':
+      {
+        const dish = recognizeDish(addition);
+        if (dish?.tasteInference) {
+          return {
+            value: `${oldValue}，也喜欢${dish.canonicalName}，可能偏好${dish.tasteInference.value}口味`,
+            acknowledgement: null,
+            requiresConfirmation: true,
+            reason: {
+              type: 'dish_collection_inference',
+              dishName: dish.canonicalName,
+              inferredTaste: dish.tasteInference.value,
+              existingPreference: oldValue,
+            },
+          };
+        }
+      }
+      return {
+        value: `${oldValue}，也喜欢${addition}`,
+        acknowledgement: `记下啦，你之前说的口味和${addition}都喜欢。`,
+      };
+    case 'restrictions':
+      return {
+        value: `${oldValue}，还需避开${addition}`,
+        acknowledgement: `记下啦，除了之前说的，${addition}也需要避开。`,
+      };
+    case 'goal':
+      return {
+        value: `${oldValue}，也希望${addition}`,
+        acknowledgement: `记下啦，${addition}也是你的目标之一。`,
+      };
+    case 'exercise':
+      return {
+        value: `${oldValue}，另外${addition}`,
+        acknowledgement: `记下啦，你的运动情况还包括${addition}。`,
+      };
+    case 'scene':
+      return {
+        value: `${oldValue}，也会${addition}`,
+        acknowledgement: `记下啦，这两种就餐场景你都会遇到。`,
+      };
+    case 'budget':
+      return {
+        value: `${oldValue}，另外${addition}`,
+        acknowledgement: `记下啦，预算方面还要加上${addition}。`,
+      };
+    case 'cafeteriaMode':
+      return {
+        value: `${oldValue}，也有${addition}`,
+        acknowledgement: `记下啦，你们食堂这两种打饭方式都有。`,
+      };
+    default:
+      return null;
+  }
+}
 
 async function classifyPotentialConflict({ slotLabel, oldValue, newValue, focusLabel, userText }) {
   const prompt = [
@@ -93,17 +178,32 @@ async function conflictRouter(state) {
   const hasExistingPending = Boolean(state.pendingConfirmation);
 
   const slotUpdates = {};
+  const acknowledgementMessages = [];
   let firstConflict = null;
+  const pendingQueue = [...(state.pendingConfirmationQueue || [])];
 
-  for (const key of SLOT_KEYS) {
+  function queueConflict(conflict) {
+    if (!pendingQueue.some((item) => item.field === conflict.field && item.newValue === conflict.newValue)) {
+      pendingQueue.push(conflict);
+    }
+  }
+
+  for (const key of TRACKED_SLOT_KEYS) {
     const candidate = state.candidateSlots?.[key];
     if (!candidate) continue;
 
     const slot = state.slots[key] || { value: null, confirmed: false };
     const isFocusSlot = key === state.lastAskedSlot;
+    const confirmationReason = state.candidateConfirmationReasons?.[key] || null;
 
     if (!slot.confirmed) {
-      if (isFocusSlot) {
+      const canSafelyCaptureCafeteriaMode =
+        key === 'cafeteriaMode' &&
+        ((state.slots.scene?.confirmed && state.slots.scene.value?.includes('食堂')) ||
+          (!state.slots.scene?.confirmed &&
+            state.lastAskedSlot === 'scene' &&
+            state.candidateSlots?.scene?.includes('食堂')));
+      if ((isFocusSlot || canSafelyCaptureCafeteriaMode) && !confirmationReason) {
         // AI这一轮主动问的就是这一项，用户是在正面回答问题，风险较低，
         // 按原逻辑直接确认。
         slotUpdates[key] = { value: candidate, confirmed: true };
@@ -116,15 +216,41 @@ async function conflictRouter(state) {
           // eslint-disable-next-line no-console
           console.log(`[conflictRouter] ${key} 是意外字段（非lastAskedSlot）且首次出现候选值 "${candidate}"，转入确认流程而不是自动确认`);
         }
-        firstConflict = { field: key, oldValue: null, newValue: candidate };
+        firstConflict = { field: key, oldValue: null, newValue: candidate, reason: confirmationReason };
+      } else {
+        queueConflict({ field: key, oldValue: null, newValue: candidate, reason: confirmationReason });
       }
-      // 意外字段但本轮已经有 firstConflict，或已经有旧的 pendingConfirmation
-      // 还没解决：本轮直接丢弃，避免一次性堆叠多个待确认问题。
       continue;
     }
 
     if (candidate === slot.value) {
       continue;
+    }
+
+    const explicitAddition = mergeExplicitAddition(key, slot.value, candidate, userText);
+    if (explicitAddition) {
+      if (explicitAddition.requiresConfirmation) {
+        const conflict = {
+          field: key,
+          oldValue: slot.value,
+          newValue: explicitAddition.value,
+          reason: explicitAddition.reason,
+        };
+        if (!firstConflict && !hasExistingPending) firstConflict = conflict;
+        else queueConflict(conflict);
+      } else {
+        slotUpdates[key] = { value: explicitAddition.value, confirmed: true };
+        acknowledgementMessages.push({ role: 'ai', content: explicitAddition.acknowledgement });
+      }
+      continue;
+    }
+
+    if (key === 'restrictions') {
+      const mergedRestriction = mergeRestrictionReaction(slot.value, candidate, userText);
+      if (mergedRestriction) {
+        slotUpdates[key] = { value: mergedRestriction, confirmed: true };
+        continue;
+      }
     }
 
     // eslint-disable-next-line no-await-in-loop
@@ -143,8 +269,10 @@ async function conflictRouter(state) {
 
     if (classification === 'same_meaning') {
       slotUpdates[key] = { value: candidate, confirmed: true };
-    } else if (classification === 'correction' && !firstConflict && !hasExistingPending) {
-      firstConflict = { field: key, oldValue: slot.value, newValue: candidate };
+    } else if (classification === 'correction') {
+      const conflict = { field: key, oldValue: slot.value, newValue: candidate };
+      if (!firstConflict && !hasExistingPending) firstConflict = conflict;
+      else queueConflict(conflict);
     }
     // incidental_mention：什么都不做，丢弃这个候选值
     // correction 但 hasExistingPending 为真：同样丢弃，避免叠加第二个待确认
@@ -153,13 +281,23 @@ async function conflictRouter(state) {
   const result = {
     slots: slotUpdates,
     candidateSlots: {},
+    candidateConfirmationReasons: {},
   };
+  if (acknowledgementMessages.length > 0) result.messages = acknowledgementMessages;
 
   if (firstConflict) {
     result.pendingConfirmation = firstConflict;
+  }
+  if (pendingQueue.length !== (state.pendingConfirmationQueue || []).length) {
+    result.pendingConfirmationQueue = pendingQueue;
   }
 
   return result;
 }
 
-module.exports = { conflictRouter, classifyPotentialConflict };
+module.exports = {
+  conflictRouter,
+  classifyPotentialConflict,
+  mergeRestrictionReaction,
+  mergeExplicitAddition,
+};

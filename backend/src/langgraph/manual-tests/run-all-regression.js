@@ -34,6 +34,18 @@ const CHAT_LANGGRAPH_URL = process.env.CHAT_LANGGRAPH_URL || 'http://localhost:3
 // 顺序：先跑不需要HTTP服务、纯节点函数调用的，再跑需要真实HTTP接口的，
 // 老架构对照放最后（跟scenario6是同一组输入，方便紧挨着对比阅读）。
 const SCRIPTS = [
+  { file: 'scenario22-cycle-onboarding.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario40-browser-comments-regression.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario41-user-archived-flow-http.js', needsServer: true, needsNetwork: true },
+  { file: 'scenario42-natural-onboarding-and-open-dish.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario43-food-rejection-transition.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario28-dish-taste-inference.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario29-confirmation-with-supplement.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario30-explicit-addition-not-correction.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario31-addition-real-graph.js', needsServer: false, needsNetwork: true },
+  { file: 'scenario32-http-taste-flow.js', needsServer: true, needsNetwork: true },
+  { file: 'scenario33-body-before-cycle.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario34-body-extraction-real.js', needsServer: false, needsNetwork: true },
   { file: 'scenario11-surprise-field-confirmation.js', needsServer: false, needsNetwork: false },
   { file: 'scenario4-ambiguous-number.js', needsServer: false, needsNetwork: true },
   { file: 'scenario8-scene-false-trigger.js', needsServer: false, needsNetwork: true },

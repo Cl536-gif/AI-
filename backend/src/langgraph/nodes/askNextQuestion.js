@@ -35,7 +35,89 @@ const { z } = require('zod');
 const { model, classifierModel } = require('../model');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
 const { generateWithFormatGuard } = require('../../services/formatGuard');
-const { SLOT_KEYS, SLOT_LABELS } = require('../state');
+const { buildServiceBoundaryAnswer, buildReminderCapabilityAnswer } = require('../../pricingConfig');
+const { SLOT_KEYS, SLOT_LABELS, TRACKED_SLOT_KEYS } = require('../state');
+const { getUndeliveredMuscleGoalGuidance } = require('../goalGuidance');
+
+const CAFETERIA_MODE_QUESTION =
+  '不同食堂的打饭方式不太一样，我再了解一下你们食堂的情况～如果能自己挑菜，我会直接帮你搭配主食、菜和分量；' +
+  '如果是窗口已经配好的套餐，我会告诉你拿到套餐后怎么取舍和替换。你们食堂更接近哪一种呀？';
+
+const PRODUCT_INFO_QUESTION_REGEX = /(付费|收费|免费|花钱|多少钱|价格|价钱)/;
+const REMINDER_QUESTION_REGEX = /(提醒|推送|定时|通知).*(吗|嘛|么|能不能|可以)|能不能.*(提醒|推送)|可以.*(提醒|推送)/;
+const SERVICE_OPTION_QUESTION_REGEX = /(有哪些|什么).*(选择|选项|模式|功能)|怎么选|两种方式|服务区别/;
+const CAPABILITY_QUESTION_REGEX = /(你能帮我什么|能帮我什么|你可以帮我什么|你能帮到我什么|能帮到我什么|你会做什么|你有什么用|能做什么)/;
+const MALE_SELF_DISCLOSURE_REGEX = /(?:(?:我是|本人是|我算是|性别(?:是|为)?)[^。！？]{0,8}(?:男大学生|男学生|男生|男性|男的)|(?:^|[，,。！？!?；;：:\s])(?:在校)?男大学生(?:[，,。！？!?；;：:\s]|$))/;
+const WEARABLE_CALORIE_QUESTION_REGEX = /(手表[^。！？]*(等量|补回|什么意思|为什么)|不[^。！？]*按[^。！？]*手表[^。！？]*(等量|补回)|等量补回[^。！？]*(什么意思|为什么))/;
+const GENERAL_QUESTION_REGEX = /[？?]|(吗|嘛|么|为什么|怎么|如何|能不能|可不可以|有没有)[。！!～~]?$/;
+const GOAL_QUESTION_REGEX = /(整体感受|整体状态|整体达到|身材目标|想达到|想改善|希望达到|最想改善|达到什么样)[^。！？\n]*[？?]/;
+
+const FIRST_TURN_INTRO =
+  '你好～我是你的私人健康饮食管理秘书，会先了解你的真实饮食习惯，再陪你一点点找到更适合自己的吃法。';
+const RESUME_PREVIOUS_QUESTION_MESSAGE = '那先来回答一下前面问你的问题～';
+const EMOTIONAL_START_SCENE_QUESTION =
+  '如果你愿意，我们就从最基础、最容易回答的一点开始聊聊，不用一下子说很多，好吗？你平时吃饭主要是食堂还是外卖呀？';
+const FOOD_REJECTION_REGEX = /(不爱吃|不喜欢吃|不想吃|吃不惯|换一个|换掉)/;
+const TASTE_PROFILE_SCENE_TRANSITION =
+  '如果想让我给出的搭配更符合你的口味，还需要先聊聊你平时的饮食习惯～' +
+  '我们先从最基础的开始：你平时吃饭主要是食堂还是外卖呀？';
+
+function normalizeFoodRejectionTransition(text, userText, nextSlot) {
+  if (nextSlot !== 'scene' || !FOOD_REJECTION_REGEX.test(String(userText || ''))) return text;
+  const value = String(text || '').trim();
+  const replaced = value.replace(
+    /(?:顺便(?:再)?确认一下|那(?:再|先)?确认一下)[：:，,]?\s*[\s\S]*$/,
+    TASTE_PROFILE_SCENE_TRANSITION
+  );
+  if (replaced !== value) return replaced;
+  return value.replace(
+    /[^。！？\n]*(?:食堂)[^。！？\n]*(?:外卖)[^。！？\n]*[？?][～~]?$/,
+    TASTE_PROFILE_SCENE_TRANSITION
+  );
+}
+
+const CAPABILITY_ANSWER =
+  '我主要帮你把“这一顿具体怎么吃”说清楚：结合你的日常场景、口味和预算，直接告诉你主食、菜和分量怎么搭，没有合适的也会准备替换办法。' +
+  '食堂能自己选菜时，我会帮你组合；拿到的是固定套餐，我会告诉你怎么取舍；点外卖时，我会根据实际能买到的餐食帮你调整。' +
+  '我们不用一下子把原来的习惯全改掉，先从最容易做到的一顿开始。我会陪你一步一步调整，让饮食越来越稳定，也慢慢朝你想要的健康状态和身材目标靠近～';
+
+const MALE_SERVICE_BOUNDARY_ANSWER =
+  '明白～目前长期饮食定制和阶段调整主要面向想减脂、塑形的在校女生。' +
+  '不过你仍然可以问我增肌、日常搭配、食堂选菜或外卖选择等饮食问题，我也会结合你的情况给出第一版基础建议；' +
+  '只是暂时不会进入长期跟踪调整。';
+
+const WEARABLE_CALORIE_ANSWER =
+  '意思是手表显示的消耗只是估算值，比如显示消耗300千卡，并不代表就要额外吃回300千卡。' +
+  '我会把这个数字和运动类型、时长、强度及当天饮食一起作为参考，再判断是否需要调整正餐或加餐。';
+
+function getFixedProductAnswer(userText) {
+  if (WEARABLE_CALORIE_QUESTION_REGEX.test(userText)) return WEARABLE_CALORIE_ANSWER;
+  if (MALE_SELF_DISCLOSURE_REGEX.test(userText)) return MALE_SERVICE_BOUNDARY_ANSWER;
+  if (CAPABILITY_QUESTION_REGEX.test(userText)) return CAPABILITY_ANSWER;
+  if (REMINDER_QUESTION_REGEX.test(userText)) return buildReminderCapabilityAnswer();
+  if (PRODUCT_INFO_QUESTION_REGEX.test(userText) || SERVICE_OPTION_QUESTION_REGEX.test(userText)) {
+    return buildServiceBoundaryAnswer();
+  }
+  return null;
+}
+
+function isFirstConversationTurn(messages) {
+  const humanCount = messages.filter((m) => getMessageRole(m) === 'human').length;
+  const aiCount = messages.filter((m) => getMessageRole(m) === 'ai').length;
+  return humanCount === 1 && aiCount === 0;
+}
+
+function composeReplyMessages({ replyText, sideAnswer, fixedProductAnswer, isFirstTurn }) {
+  let generatedText = replyText.trim();
+  if (isFirstTurn) {
+    // 自我介绍由固定模板负责；如果模型仍自行加了“你好/嗨”，只剥掉问候词，
+    // 保留后面可能存在的有效回答和采集问题。
+    generatedText = generatedText.replace(/^(你好|嗨)[呀啊哈～~，,\s]*/, '');
+  }
+  const answerText = fixedProductAnswer || sideAnswer;
+  const firstMessage = [isFirstTurn ? FIRST_TURN_INTRO : null, answerText].filter(Boolean).join('\n');
+  return [firstMessage, generatedText].filter(Boolean);
+}
 const { getMessageRole, getMessageText } = require('../utils/messages');
 
 // 第一版描述里用了"提问/确认"这个措辞，真实测试发现模型会把"记下啦：
@@ -75,7 +157,10 @@ const targetSlotCheckModel = classifierModel.withStructuredOutput(targetSlotChec
   name: 'check_asks_target_slot',
 });
 
-async function checkAsksTargetSlot(replyText, slotLabel) {
+async function checkAsksTargetSlot(replyText, slotLabel, slotKey) {
+  // “身材目标”允许用户用“整体感受/状态”作答。真实测试中分类模型连续
+  // 把这类明确问句判成false，先用确定性语义短语做快速通道。
+  if (slotKey === 'goal' && GOAL_QUESTION_REGEX.test(replyText)) return true;
   const prompt = [
     {
       role: 'system',
@@ -134,6 +219,18 @@ const PREMATURE_PLAN_PATTERNS = [
   },
 ];
 
+const MAX_COLLECTION_QUESTION_LENGTH = 150;
+
+function detectCollectionVerbosity(text) {
+  if (text.trim().length <= MAX_COLLECTION_QUESTION_LENGTH) return [];
+  return [{
+    type: 'collection_question_too_verbose',
+    detail:
+      `这段采集回复有${text.trim().length}字，超过${MAX_COLLECTION_QUESTION_LENGTH}字；` +
+      '用户没有要求解释时，只能简短承接一句、给少量必要示例，然后问一个问题',
+  }];
+}
+
 function detectPrematurePlan(text) {
   return PREMATURE_PLAN_PATTERNS.filter((p) => p.regex.test(text)).map((p) => ({ type: p.type, detail: p.detail }));
 }
@@ -143,9 +240,9 @@ function detectPrematurePlan(text) {
 // checkAsksTargetSlot 兜底——不管正则有没有命中，都再问一遍"这段话到底
 // 有没有实质问到目标字段"，这条判断跟具体措辞无关，理论上能覆盖所有
 // 未来可能出现的新规避方式，不用再靠不断新增正则去追。
-async function detectAskNextQuestionViolations(text, slotLabel) {
-  const violations = detectPrematurePlan(text);
-  const asksTarget = await checkAsksTargetSlot(text, slotLabel);
+async function detectAskNextQuestionViolations(text, slotLabel, slotKey) {
+  const violations = [...detectPrematurePlan(text), ...detectCollectionVerbosity(text)];
+  const asksTarget = await checkAsksTargetSlot(text, slotLabel, slotKey);
   if (!asksTarget) {
     violations.push({
       type: 'not_asking_target_slot',
@@ -191,13 +288,14 @@ function buildPrematurePlanRetryInstruction(violations, slotLabel, previousReply
     `信息还没收集完（还差"${slotLabel}"这一项），但上一次的回复却出现了以下` +
     `跟这个判断矛盾的内容：\n${parts}\n这一轮唯一的任务是自然地问出` +
     `"${slotLabel}"这一项，绝对不能声称六项已经收集完、不能给出任何具体的` +
-    '菜品组合方案、不能用"你觉得这个方案怎么样"这类语气收尾——这些都是出方案' +
+    '菜品组合方案、不能用"你觉得这个方案怎么样"这类语气收尾；同时不要重复介绍能力、' +
+    '不要换句话复述同一层意思、举例最多保留三个，简短承接后只问一个问题——这些都是出方案' +
     '环节该做的事，这一轮完全不适用，请重新生成一版单纯的提问。'
   );
 }
 
 function formatKnownSlots(slots) {
-  const known = SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
+  const known = TRACKED_SLOT_KEYS.filter((key) => slots[key] && slots[key].value).map((key) => {
     const slot = slots[key];
     return `${SLOT_LABELS[key]}: ${slot.value}${slot.confirmed ? '（已确认）' : '（未确认，待确认中）'}`;
   });
@@ -208,6 +306,29 @@ async function askNextQuestion(state) {
   const nextSlot = state.nextSlotToAsk;
   const slotLabel = SLOT_LABELS[nextSlot];
 
+  if (nextSlot === 'cafeteriaMode') {
+    const resumeMessage = state.resumePreviousQuestion ? RESUME_PREVIOUS_QUESTION_MESSAGE : null;
+    return {
+      messages: [
+        resumeMessage,
+        state.emotionalSupportDeliveredThisTurn
+          ? `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${CAFETERIA_MODE_QUESTION}`
+          : CAFETERIA_MODE_QUESTION,
+      ]
+        .filter(Boolean)
+        .map((content) => ({ role: 'ai', content })),
+      lastAskedSlot: nextSlot,
+      ...(resumeMessage ? { resumePreviousQuestion: false } : {}),
+      ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+    };
+  }
+
+  const lastUserMessage = [...state.messages].reverse().find((m) => getMessageRole(m) === 'human');
+  const lastUserText = lastUserMessage ? getMessageText(lastUserMessage) : '';
+  const fixedProductAnswer = getFixedProductAnswer(lastUserText);
+  const isFirstTurn = isFirstConversationTurn(state.messages);
+  const hasGeneralQuestion = GENERAL_QUESTION_REGEX.test(lastUserText.trim());
+
   const taskInstruction =
     `【本轮任务】六项信息采集里，"${slotLabel}"这一项还没有确认，你这一轮需要` +
     `把这一项问出来。已经确认的信息：\n${formatKnownSlots(state.slots)}\n\n` +
@@ -215,6 +336,24 @@ async function askNextQuestion(state) {
     `"${slotLabel}"），你不需要自己判断采集进度、不需要自己决定问题顺序，只需要` +
     '结合上面完整的系统规则（对话流程/情绪优先/格式/真实性等所有规则依然全部' +
     '生效），把这一项自然地问出来。\n\n' +
+    (isFirstTurn
+      ? '这是新对话的第一轮，外部代码会在回复最前面加上固定的身份介绍。你不要自行说“你好”“嗨”或重复自我介绍。\n\n'
+      : '') +
+    (state.resumePreviousQuestion
+      ? '刚才为了核实用户同一句话里的另一项信息，临时插入了一个确认问题，现在要回到此前尚未回答的问题。' +
+        '外部代码会先单独发送一句自然过渡；你这里只直接问目标字段，不要再说“继续问你”“再问一个”“回到正题”或重复解释流程。\n\n'
+      : '') +
+    (state.emotionalSupportDeliveredThisTurn
+      ? '上一条消息已经完成了情绪共情、鼓励和解决方向。这里绝对不要再次说“压力很大”“焦虑”“抱抱”或重复安慰，' +
+        '只需要自然承接并问目标字段；外部代码会加上是否愿意开始的过渡。\n\n'
+      : '') +
+    (fixedProductAnswer
+      ? '用户这一轮还顺带问了产品功能、提醒、收费或服务选项问题，这部分会由外部代码用固定产品话术回答。' +
+        '你生成的内容里不要重复回答产品问题，只继续完成本轮缺失信息的提问。\n\n'
+      : hasGeneralQuestion
+        ? '用户这一轮还提出了一个其他问题，这部分会由外部流程先单独回答。你不要重复回答，' +
+          '这里只继续完成本轮缺失信息的提问。\n\n'
+        : '') +
     '【严格禁止】这一轮唯一的任务就是问出这一项缺失的信息，绝对不能在这一轮' +
     '提前给出任何具体的饮食方案、菜品推荐、分量建议——哪怕你觉得已经确认的' +
     '信息看起来已经足够多、已经能大概判断出方案该怎么搭，也必须忍住不要提前' +
@@ -227,6 +366,21 @@ async function askNextQuestion(state) {
   const userMessages = state.messages
     .filter((m) => getMessageRole(m) === 'human')
     .map((m) => getMessageText(m));
+
+  let sideAnswer = null;
+  if (hasGeneralQuestion && !fixedProductAnswer) {
+    const sideResponse = await model.invoke([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content:
+          '用户刚才先问了一个问题。只直接回答这个问题，控制在一到两句话；不要询问六项信息，' +
+          '不要开始饮食信息采集，不要提前生成饮食方案。后续采集问题会由另一个步骤单独发送。',
+      },
+      ...state.messages,
+    ]);
+    sideAnswer = String(sideResponse.content || '').trim();
+  }
 
   async function generateOnce(prematurePlanInstruction) {
     return generateWithFormatGuard({
@@ -260,7 +414,7 @@ async function askNextQuestion(state) {
     const result = await generateOnce(extraInstruction);
     replyText = result.text;
     // eslint-disable-next-line no-await-in-loop
-    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel);
+    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel, nextSlot);
 
     if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
@@ -300,7 +454,15 @@ async function askNextQuestion(state) {
         replyText
       );
     }
-    replyText = `不好意思，刚才有点跑偏了——"${slotLabel}"这一项我还没跟你确认清楚，方便直接告诉我一下吗？`;
+    replyText = `回到咱们刚才的话题，"${slotLabel}"这一项我还没跟你确认清楚，方便直接告诉我一下吗？`;
+  }
+
+  replyText = normalizeFoodRejectionTransition(replyText, lastUserText, nextSlot);
+
+  if (state.emotionalSupportDeliveredThisTurn && nextSlot === 'scene') {
+    replyText = EMOTIONAL_START_SCENE_QUESTION;
+  } else if (state.emotionalSupportDeliveredThisTurn) {
+    replyText = `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${replyText}`;
   }
 
   if (process.env.LANGGRAPH_DEBUG) {
@@ -310,10 +472,43 @@ async function askNextQuestion(state) {
     console.log('[askNextQuestion] 生成的问题:', replyText);
   }
 
+  const replyMessages = composeReplyMessages({
+    replyText,
+    sideAnswer,
+    fixedProductAnswer,
+    isFirstTurn,
+  });
+  const muscleGoalGuidance = getUndeliveredMuscleGoalGuidance(state);
+  const resumeMessage = state.resumePreviousQuestion ? RESUME_PREVIOUS_QUESTION_MESSAGE : null;
+
   return {
-    messages: [{ role: 'ai', content: replyText }],
+    messages: [muscleGoalGuidance, resumeMessage, ...replyMessages]
+      .filter(Boolean)
+      .map((content) => ({ role: 'ai', content })),
     lastAskedSlot: nextSlot,
+    ...(muscleGoalGuidance ? { muscleGoalGuidanceDelivered: true } : {}),
+    ...(resumeMessage ? { resumePreviousQuestion: false } : {}),
+    ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
   };
 }
 
-module.exports = { askNextQuestion };
+module.exports = {
+  askNextQuestion,
+  CAFETERIA_MODE_QUESTION,
+  checkAsksTargetSlot,
+  detectAskNextQuestionViolations,
+  FIRST_TURN_INTRO,
+  RESUME_PREVIOUS_QUESTION_MESSAGE,
+  EMOTIONAL_START_SCENE_QUESTION,
+  CAPABILITY_ANSWER,
+  MALE_SERVICE_BOUNDARY_ANSWER,
+  MALE_SELF_DISCLOSURE_REGEX,
+  WEARABLE_CALORIE_ANSWER,
+  MAX_COLLECTION_QUESTION_LENGTH,
+  detectCollectionVerbosity,
+  getFixedProductAnswer,
+  isFirstConversationTurn,
+  composeReplyMessages,
+  normalizeFoodRejectionTransition,
+  TASTE_PROFILE_SCENE_TRANSITION,
+};
