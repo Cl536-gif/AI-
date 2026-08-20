@@ -1,0 +1,55 @@
+002 IDENTITY MERGE RAW RESULTS
+Source: user-provided DMC output preserved in the acceptance conversation
+
+[002A]
+"indexes:002a_expected_9","true","found=9"
+
+[002C_RPC_SIGNATURES]
+1|app.begin_current_long_term_profile_confirmation(varchar,varchar,jsonb,timestamptz)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+2|app.get_current_merge_review(uuid)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+3|app.get_current_user_merge(varchar)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+4|app.merge_current_account_from_anonymous(varchar)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+5|app.merge_value_is_blank(jsonb)|true|diet_owner|security_definer=false|diet_app_execute=false|public_execute=false
+6|app.profile_snapshot_for_merge(varchar)|true|diet_owner|security_definer=true|diet_app_execute=false|public_execute=false
+7|app.release_current_merged_sensitive_events(uuid)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+8|app.resolve_anonymous_identity(varchar,varchar)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+9|app.save_current_long_term_profile_fields(jsonb,jsonb,uuid,varchar,timestamptz)|true|diet_owner|security_definer=true|diet_app_execute=true|public_execute=false
+10|app.user_event_merge_fingerprint(varchar,timestamptz,jsonb,varchar)|true|diet_owner|security_definer=false|diet_app_execute=false|public_execute=false
+
+[002D_STRUCTURE]
+"75","75","0","none"
+
+[002D_BEHAVIOR]
+"PASS","c49696cd-708c-44c2-bf86-e609b6115bda","true","true","true","true","true","true","true","true","true","true","true","true","true","2","1","2","true","true","0","0","true","true","true","true","true","true","true"
+
+[002D_TEMP_TABLE_CLEANUP]
+DROP TABLE IF EXISTS pg_temp.dmc_002d_structure_results;
+DROP TABLE IF EXISTS pg_temp.dmc_002d_final_result;
+DROP TABLE IF EXISTS pg_temp.dmc_002d_sql_parts;
+Result: success
+
+[CONCURRENCY_SETUP]
+"SETUP_PASS","2","{acct:fkshare_20260818_190000_k7m2,anon:fkshare_20260818_190000_k7m2}"
+
+[SESSION_A_LOCK_HELD]
+"SESSION_A_LOCK_HELD_DO_NOT_COMMIT",24591,"2026-08-19 10:08:33.343125+08:00"
+
+[SESSION_A_RELEASE]
+"SESSION_A_RELEASING_LOCK",24591,"2026-08-19 10:13:45.332692+08:00"
+
+[SESSION_B_MERGE_RETURNED]
+"SESSION_B_MERGE_RETURNED",70163,"2026-08-19 10:09:48.166436+08:00","2026-08-19 10:13:45.344079+08:00","{\"status\": \"completed\", \"mergeId\": \"f4e8e10e-8e8d-4f36-a286-2277dfaf860f\", \"mergedAt\": \"2026-08-19T10:13:45.335488+08:00\", \"sourceUserId\": \"anon:fkshare_20260818_190000_k7m2\", \"targetUserId\": \"acct:fkshare_20260818_190000_k7m2\", \"idempotentReplay\": false, \"migratedEventCount\": 1, \"profileConflictCount\": 0, \"deduplicatedEventCount\": 0}"
+
+[CONCURRENCY_POSTCONDITION]
+"PASS","f4e8e10e-8e8d-4f36-a286-2277dfaf860f","2026-08-19 10:13:45.335488+08:00","merged","acct:fkshare_20260818_190000_k7m2","active","1","1","1"
+
+[NEGATIVE_TESTS]
+"PASS","true","42501","true","P0001","true","P0001","true","42501"
+
+[INITIAL_CLEANUP_FAILURE]
+pq: update or delete on table "users" violates foreign key constraint "user_events_user_id_fkey" on table "user_events"
+pq: current transaction is aborted, commands ignored until end of transaction block
+
+[FINAL_CLEANUP]
+"CLEANUP_PASS","0","0","0"
+
