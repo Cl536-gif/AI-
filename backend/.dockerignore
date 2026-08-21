@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+coverage
+.git
+.gitignore
+.DS_Store
+
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
