@@ -6,7 +6,7 @@ const path = require('path');
 // 否则 embedder.js 里读 KB_EMBEDDING_MODEL 等环境变量时就已经晚了。
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', 'local-kb-tool', '.env') });
 
-const { retrieve } = require('../../../local-kb-tool/src/query');
+const { retrieve } = require('./localKbQuery');
 
 /**
  * 依次查询多个本地知识库，每个库各取自己的 top-K，合并成一份带知识库来源标记的列表。
