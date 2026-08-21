@@ -1,5 +1,9 @@
 node_modules/
+# 本地及分环境配置可能包含真实密钥，全部禁止进入版本库。
 .env
+.env.*
+# 仅保留不含真实值的配置模板。
+!.env.example
 npm-debug.log*
-data/
+/data/
 src/langgraph/manual-tests/regression-log-*.txt
