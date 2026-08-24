@@ -21,3 +21,17 @@ stale_expected_version_rejected=PASS
 cross_user_rls_isolation=PASS
 rollback_cleanup_status=PASS
 
+004c_adapter_cloud_version_011
+status=FAIL_BEFORE_TRANSACTION
+errorCode=MODULE_NOT_FOUND
+databaseWritesStarted=false
+
+004c_adapter_cloud_version_012
+sandboxRollback=PASS
+status=FAIL
+safeDiagnosticName=ZodError
+safeDiagnosticPath=body
+safeDiagnosticCode=unrecognized_keys
+
+004c_adapter_cloud_version_013
+{"batch":"004c-adapter-cloud","status":"PASS","processPid":35,"checkCount":6,"cleanup":"PASS"}

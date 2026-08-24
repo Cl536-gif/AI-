@@ -13,6 +13,7 @@
 - 部署前只读检查：`PASS`
 - 部署后对象与权限检查：`PASS`
 - 功能回滚沙箱：全部 `PASS`
+- CloudBase版本013真实PostgreSQL适配器验证：6/6项 `PASS`
 - 最终测试数据清理：`PASS`
 
 ## 已验证能力
@@ -23,6 +24,13 @@
 4. 过期 `expectedVersion` 被以固定SQLSTATE `40001` 拒绝，且不产生版本4。
 5. 用户B无法读取用户A的版本头、版本历史、普通档案或经期档案。
 6. 沙箱事务回滚后，固定测试用户及其普通档案、经期档案、修订、授权和版本账本记录全部为0。
+7. `TencentPostgresUserStore` 的 `getProfile`、`updateProfile` 和 `listProfileRevisions` 已在CloudBase版本013通过真实私网数据库验证。
+
+## 修复轨迹
+
+- 版本011在加载验证模块时发现 `userStoreContract.js` 未进入Git代码包；事务尚未开始，没有数据库写入。
+- 版本012发现已提交Zod契约缺少数据库已支持的 `body.equationSex`；安全诊断只输出字段路径，沙箱成功回滚。
+- 补齐契约并增加本地守卫后，版本013最终返回 `checkCount=6`、`status=PASS`、`cleanup=PASS`。
 
 ## 数据边界
 
@@ -30,7 +38,7 @@
 - `app.user_profile_version_history` 只保存普通/经期修订ID引用和变更字段，不保存档案快照。
 - 普通档案和经期档案继续物理分表；经期读取仍受授权和RLS约束。
 - 私有旧RPC已撤销 `diet_app` 与 `PUBLIC` 执行权限；应用只能调用版本化入口或兼容入口。
-- 本批没有修改 `USER_STORE_ADAPTER`，线上业务存储仍为SQLite。
+- 本批没有修改 `USER_STORE_ADAPTER`，版本013验证时线上业务存储仍为SQLite。
 
 ## 证据说明
 
@@ -43,4 +51,3 @@
 ```sh
 shasum -a 256 -c MANIFEST.sha256
 ```
-

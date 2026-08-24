@@ -5,4 +5,4 @@ evidence_id,scope,result,source
 004c-versioning,"Unified versions 1 through 3 and sensitive split",PASS,raw-results.txt
 004c-concurrency,"Stale expectedVersion rejected with SQLSTATE 40001",PASS,raw-results.txt
 004c-isolation,"Cross-user RLS and rollback cleanup",PASS,raw-results.txt
-
+004c-adapter-cloud,"CloudBase version 013 real PostgreSQL adapter verification 6 of 6",PASS,raw-results.txt
