@@ -1,6 +1,6 @@
 # 004 腾讯云 PostgreSQL UserStore 接入方案（审核稿）
 
-> 状态：004a能力盘点和004b首批9方法适配器已实现；004c档案统一版本账本已完成DMC部署、对象核验和回滚沙箱验收；尚未实现3个档案适配器方法、尚未接入生产适配器选择、尚未切换业务流量。
+> 状态：004a能力盘点、004b首批9方法和004c三个档案方法已实现；档案统一版本账本已完成DMC部署、对象核验和回滚沙箱验收；尚未接入生产适配器选择、尚未切换业务流量。
 
 ## 1. 目标
 
@@ -10,7 +10,7 @@
 
 ## 2. 当前能力盘点
 
-### 2.1 数据库基础已经具备（9项）
+### 2.1 数据库基础已经具备（12项）
 
 | UserStore方法 | 数据库路径 |
 |---|---|
@@ -18,6 +18,9 @@
 | `resolveAnonymousIdentity` | `app.resolve_anonymous_identity` |
 | `mergeAnonymousIntoAccount` | `app.merge_current_account_from_anonymous` |
 | `releaseMergedSensitiveEvents` | `app.release_current_merged_sensitive_events` |
+| `getProfile` | 普通/经期当前档案分表读取，并从统一版本头取得 `profileVersion` |
+| `updateProfile` | `app.save_current_user_profile_versioned` 原子校验 `expectedVersion` 并写入统一版本账本 |
+| `listProfileRevisions` | 统一版本历史引用普通/经期修订，按授权重建领域快照 |
 | `appendEvent` | `app.append_current_user_event` |
 | `getEvent` | `app.user_events` 参数化读取 |
 | `listEvents` | `app.user_events` 参数化读取、限制条数 |
@@ -26,12 +29,11 @@
 
 “数据库基础已经具备”不等于适配器实现或云端契约已经通过。实现状态只能在代码、假连接测试和真实云端验证依次通过后升级为 `implemented_and_verified`。
 
-### 2.2 仍缺数据库结构或等价语义（27项）
+### 2.2 仍缺数据库结构或等价语义（24项）
 
 | 能力组 | UserStore方法 | 缺口 |
 |---|---|---|
 | 活跃与设置 | `recordActivity`, `getUserSettings`, `updateUserTimezone` | `last_active_at`、`timezone`、`locale` 及受控更新路径 |
-| 档案版本 | `getProfile`, `updateProfile`, `listProfileRevisions` | 稳定的 `profileVersion`、`expectedVersion` 原子冲突检查与 `changedFields` 历史语义；现有保存RPC本身不足以满足接口契约 |
 | 服务状态 | `getServiceStatus`, `setServiceStatus`, `listServiceTransitions` | 服务状态与转换表、原子RPC |
 | 能量计算 | `recordEnergyCalculation`, `listEnergyCalculations` | 计算快照表与RLS |
 | 方案生命周期 | `createPlanDraft`, `getPlan`, `getActivePlan`, `listPlans`, `transitionPlan`, `activateInitialPlanAndTrial`, `listPlanTransitions` | 方案版本、状态转换及首个计划/试用原子RPC |
@@ -59,7 +61,7 @@
 
 ### 004b：实现核心用户数据适配器
 
-- 实现第2.1节9项。
+- 实现第2.1节12项。
 - 未实现方法必须抛出固定错误码 `POSTGRES_USER_STORE_METHOD_UNAVAILABLE`，不得返回空成功结果。
 - 使用假连接验证SQL参数、用户上下文、返回值映射和事务回滚。
 - 不接入 `userStoreProvider` 的生产选择分支。
@@ -113,5 +115,5 @@ node manual-test-tencent-postgres-user-store-capabilities.js
 预期输出包含：
 
 ```json
-{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":9,"schemaRequiredMethodCount":27,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
+{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":12,"schemaRequiredMethodCount":24,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
 ```

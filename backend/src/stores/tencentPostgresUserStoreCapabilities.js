@@ -5,6 +5,9 @@ const DATABASE_READY_METHODS = Object.freeze([
   'resolveAnonymousIdentity',
   'mergeAnonymousIntoAccount',
   'releaseMergedSensitiveEvents',
+  'getProfile',
+  'updateProfile',
+  'listProfileRevisions',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -37,9 +40,6 @@ const SCHEMA_REQUIRED_METHODS = Object.freeze([
   'getUserDataSnapshot',
   'getUserSettings',
   'updateUserTimezone',
-  'getProfile',
-  'updateProfile',
-  'listProfileRevisions',
 ]);
 
 const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([
