@@ -1,0 +1,22 @@
+004e cloud acceptance raw and user-confirmed results
+Date: 2026-08-24 Asia/Shanghai
+
+[DMC preflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","0","0","0"
+
+[DMC migration]
+The complete execution history ended with successful function grants, comments and COMMIT.
+One separate/local editor execution returned: syntax error at or near "constraint".
+Postflight below is the authoritative final-state proof.
+
+[DMC postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","0","0"
+
+[DMC rollback functional sandbox]
+status_sequence_and_history_verified=PASS
+invalid_payloads_rejected_without_mutation=PASS
+cross_user_rls_isolation=PASS
+rollback_cleanup_status=PASS
+
+[CloudBase 016 adapter rollback sandbox]
+{"batch":"004e-adapter-cloud","status":"PASS","processPid":35,"checkCount":8,"cleanup":"PASS"}

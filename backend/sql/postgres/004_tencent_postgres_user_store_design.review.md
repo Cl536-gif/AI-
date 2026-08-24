@@ -1,6 +1,6 @@
 # 004 腾讯云 PostgreSQL UserStore 接入方案（审核稿）
 
-> 状态：004a能力盘点、004b首批9方法、004c三个档案方法和004d三个用户活跃/设置方法均已实现并完成云端验收；尚未接入生产适配器选择、尚未切换业务流量。
+> 状态：004a能力盘点、004b首批9方法、004c三个档案方法、004d三个用户活跃/设置方法和004e三个服务状态方法均已实现并完成云端验收；尚未接入生产适配器选择、尚未切换业务流量。
 
 ## 1. 目标
 
@@ -10,7 +10,7 @@
 
 ## 2. 当前能力盘点
 
-### 2.1 已实现并完成真实云端验证（15项）
+### 2.1 已实现并完成真实云端验证（18项）
 
 | UserStore方法 | 数据库路径 |
 |---|---|
@@ -29,14 +29,16 @@
 | `recordActivity` | `app.record_current_user_activity` 原子返回前次活跃时间并写入数据库当前时间 |
 | `getUserSettings` | `app.users` 当前用户设置参数化读取 |
 | `updateUserTimezone` | `app.update_current_user_timezone` 验证IANA时区并受控更新 |
+| `getServiceStatus` | `app.user_service_status` 当前用户服务状态参数化读取 |
+| `setServiceStatus` | `app.set_current_user_service_status` 原子替换状态并追加转换历史 |
+| `listServiceTransitions` | `app.user_service_transitions` 当前用户转换历史参数化读取 |
 
 以上方法均已通过代码、假连接测试和真实云端回滚沙箱验证。
 
-### 2.2 仍缺数据库结构或等价语义（21项）
+### 2.2 仍缺数据库结构或等价语义（18项）
 
 | 能力组 | UserStore方法 | 缺口 |
 |---|---|---|
-| 服务状态 | `getServiceStatus`, `setServiceStatus`, `listServiceTransitions` | 服务状态与转换表、原子RPC |
 | 能量计算 | `recordEnergyCalculation`, `listEnergyCalculations` | 计算快照表与RLS |
 | 方案生命周期 | `createPlanDraft`, `getPlan`, `getActivePlan`, `listPlans`, `transitionPlan`, `activateInitialPlanAndTrial`, `listPlanTransitions` | 方案版本、状态转换及首个计划/试用原子RPC |
 | 方案修订命令 | `getPlanRevisionCommand`, `recordPlanRevisionCommand` | 命令幂等表与RLS |
@@ -63,7 +65,7 @@
 
 ### 004b：实现核心用户数据适配器
 
-- 实现当时第2.1节的12项；004d再增加3项，当前共15项。
+- 实现当时第2.1节的12项；004d和004e各增加3项，当前共18项。
 - 未实现方法必须抛出固定错误码 `POSTGRES_USER_STORE_METHOD_UNAVAILABLE`，不得返回空成功结果。
 - 使用假连接验证SQL参数、用户上下文、返回值映射和事务回滚。
 - 不接入 `userStoreProvider` 的生产选择分支。
@@ -117,5 +119,5 @@ node manual-test-tencent-postgres-user-store-capabilities.js
 预期输出包含：
 
 ```json
-{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":15,"schemaRequiredMethodCount":21,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
+{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":18,"schemaRequiredMethodCount":18,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
 ```
