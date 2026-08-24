@@ -13,8 +13,8 @@ const inventory = assertCompleteCapabilityInventory();
 
 assert.strictEqual(USER_STORE_METHODS.length, 38);
 assert.strictEqual(inventory.length, USER_STORE_METHODS.length);
-assert.strictEqual(DATABASE_READY_METHODS.length, 20);
-assert.strictEqual(SCHEMA_REQUIRED_METHODS.length, 16);
+assert.strictEqual(DATABASE_READY_METHODS.length, 26);
+assert.strictEqual(SCHEMA_REQUIRED_METHODS.length, 10);
 assert.strictEqual(CONTRACT_CHANGE_REQUIRED_METHODS.length, 2);
 assert.strictEqual(new Set(Object.keys(METHOD_CAPABILITIES)).size, USER_STORE_METHODS.length);
 assert.deepStrictEqual(

@@ -16,6 +16,12 @@ const DATABASE_READY_METHODS = Object.freeze([
   'listServiceTransitions',
   'recordEnergyCalculation',
   'listEnergyCalculations',
+  'createPlanDraft',
+  'getPlan',
+  'getActivePlan',
+  'listPlans',
+  'transitionPlan',
+  'listPlanTransitions',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -24,13 +30,7 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'createPlanDraft',
-  'getPlan',
-  'getActivePlan',
-  'listPlans',
-  'transitionPlan',
   'activateInitialPlanAndTrial',
-  'listPlanTransitions',
   'getPlanRevisionCommand',
   'recordPlanRevisionCommand',
   'enqueueDueRenewalReminders',

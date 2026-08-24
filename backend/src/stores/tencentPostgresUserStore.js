@@ -89,6 +89,37 @@ function mapEnergyCalculation(userId, value) {
   };
 }
 
+function mapPlan(userId, value) {
+  if (!value) return null;
+  return {
+    planId: value.planId ?? value.plan_id,
+    userId,
+    planVersion: Number(value.planVersion ?? value.plan_version),
+    status: value.status,
+    calculationId: value.calculationId ?? value.calculation_id ?? null,
+    parentPlanId: value.parentPlanId ?? value.parent_plan_id ?? null,
+    plan: value.plan,
+    changeReason: value.changeReason ?? value.change_reason,
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+    activatedAt: normalizeTimestamp(value.activatedAt ?? value.activated_at),
+    pausedAt: normalizeTimestamp(value.pausedAt ?? value.paused_at),
+    completedAt: normalizeTimestamp(value.completedAt ?? value.completed_at),
+  };
+}
+
+function mapPlanTransition(userId, planId, value) {
+  if (!value) return null;
+  return {
+    transitionId: value.transitionId ?? value.transition_id,
+    planId,
+    userId,
+    fromStatus: value.fromStatus ?? value.from_status ?? null,
+    toStatus: value.toStatus ?? value.to_status,
+    reason: value.reason,
+    occurredAt: normalizeTimestamp(value.occurredAt ?? value.occurred_at),
+  };
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -460,6 +491,110 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function getPlan(userId, planId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) throw new Error('planId不能为空');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT plan_id, plan_version, status, calculation_id, parent_plan_id, plan, change_reason, created_at, activated_at, paused_at, completed_at FROM app.user_plan_versions WHERE user_id = $1 AND plan_id = $2 LIMIT 1',
+        [normalizedUserId, normalizedPlanId]
+      );
+      return mapPlan(normalizedUserId, result.rows[0]);
+    });
+  }
+
+  async function getActivePlan(userId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        "SELECT plan_id, plan_version, status, calculation_id, parent_plan_id, plan, change_reason, created_at, activated_at, paused_at, completed_at FROM app.user_plan_versions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+        [normalizedUserId]
+      );
+      return mapPlan(normalizedUserId, result.rows[0]);
+    });
+  }
+
+  async function listPlans(userId, { limit = 50 } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT plan_id, plan_version, status, calculation_id, parent_plan_id, plan, change_reason, created_at, activated_at, paused_at, completed_at FROM app.user_plan_versions WHERE user_id = $1 ORDER BY plan_version DESC LIMIT $2',
+        [normalizedUserId, safeLimit]
+      );
+      return result.rows.map((row) => mapPlan(normalizedUserId, row));
+    });
+  }
+
+  async function createPlanDraft(userId, input, {
+    now = new Date().toISOString(),
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('计划草稿参数格式不正确');
+    }
+    const createdAt = new Date(now);
+    if (Number.isNaN(createdAt.getTime())) throw new Error('计划草稿时间格式不正确');
+    const payload = {
+      calculationId: input.calculationId ?? null,
+      parentPlanId: input.parentPlanId ?? null,
+      plan: input.plan,
+      changeReason: input.changeReason,
+    };
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.create_current_user_plan_draft($1::jsonb, $2::timestamptz) AS result',
+        [JSON.stringify(payload), createdAt.toISOString()]
+      );
+      const saved = mapPlan(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL计划草稿写入未返回结果');
+      return saved;
+    });
+  }
+
+  async function transitionPlan(userId, planId, toStatus, {
+    reason = 'unspecified',
+    now = new Date().toISOString(),
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedPlanId = String(planId || '').trim();
+    const normalizedStatus = String(toStatus || '').trim();
+    if (!normalizedPlanId) throw new Error('planId不能为空');
+    if (!normalizedStatus) throw new Error('计划目标状态不能为空');
+    const occurredAt = new Date(now);
+    if (Number.isNaN(occurredAt.getTime())) throw new Error('计划转换时间格式不正确');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.transition_current_user_plan($1, $2, $3, $4::timestamptz) AS result',
+        [
+          normalizedPlanId,
+          normalizedStatus,
+          String(reason || 'unspecified'),
+          occurredAt.toISOString(),
+        ]
+      );
+      const saved = mapPlan(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL计划状态转换未返回结果');
+      return saved;
+    });
+  }
+
+  async function listPlanTransitions(userId, planId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) throw new Error('planId不能为空');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT transition_id, from_status, to_status, reason, occurred_at FROM app.plan_state_transitions WHERE user_id = $1 AND plan_id = $2 ORDER BY occurred_at DESC, transition_id DESC',
+        [normalizedUserId, normalizedPlanId]
+      );
+      return result.rows.map((row) => (
+        mapPlanTransition(normalizedUserId, normalizedPlanId, row)
+      ));
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -560,6 +695,12 @@ function createTencentPostgresUserStore({
     listServiceTransitions,
     recordEnergyCalculation,
     listEnergyCalculations,
+    createPlanDraft,
+    getPlan,
+    getActivePlan,
+    listPlans,
+    transitionPlan,
+    listPlanTransitions,
     appendEvent,
     getEvent,
     listEvents,
