@@ -1,0 +1,29 @@
+004d cloud acceptance raw and user-confirmed results
+Date: 2026-08-24 Asia/Shanghai
+
+[DMC preflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","0","0","0"
+
+[DMC migration]
+Execution status: SUCCESS (user confirmed)
+
+[DMC postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","true","true","0","0","0","0"
+
+[DMC rollback functional sandbox]
+activity_and_default_settings_verified=PASS
+timezone_update_verified=PASS
+invalid_timezone_rejected=PASS
+cross_user_rls_isolation=PASS
+rollback_cleanup_status=PASS
+
+[CloudBase 015 adapter rollback sandbox]
+{"batch":"004d-adapter-cloud","check":"verification_started","status":"PASS","at":"2026-08-24T08:00:12.047Z","processPid":67,"adapterRemainsSqlite":true,"privateNetworkGuardPassed":true,"testPoolMax":1}
+{"batch":"004d-adapter-cloud","check":"first_activity_and_default_settings_verified","status":"PASS","at":"2026-08-24T08:00:12.080Z","backendPid":86508,"previousActiveAtEmpty":true,"defaultTimezoneMatched":true,"defaultLocaleMatched":true}
+{"batch":"004d-adapter-cloud","check":"repeated_activity_timestamp_verified","status":"PASS","at":"2026-08-24T08:00:12.082Z","backendPid":86508,"previousTimestampMatched":true,"timestampMonotonic":true}
+{"batch":"004d-adapter-cloud","check":"timezone_update_and_reread_verified","status":"PASS","at":"2026-08-24T08:00:12.100Z","backendPid":86508,"timezoneMatched":true,"localePreserved":true}
+{"batch":"004d-adapter-cloud","check":"invalid_timezone_rejected_without_mutation","status":"PASS","at":"2026-08-24T08:00:12.116Z","backendPid":86508,"errorCode":"22023","timezoneRemainsUtc":true}
+{"batch":"004d-adapter-cloud","check":"cross_user_settings_isolation_verified","status":"PASS","at":"2026-08-24T08:00:12.117Z","backendPid":86508,"crossUserSettingsVisible":false}
+{"batch":"004d-adapter-cloud","check":"activity_settings_adapter_sandbox_rolled_back","status":"PASS","at":"2026-08-24T08:00:12.118Z","backendPid":86508,"cleanup":"rollback"}
+{"batch":"004d-adapter-cloud","check":"activity_settings_adapter_cleanup_proven","status":"PASS","at":"2026-08-24T08:00:12.126Z","backendPid":86508,"remainingUsers":0}
+{"batch":"004d-adapter-cloud","status":"PASS","processPid":67,"checkCount":8,"cleanup":"PASS"}

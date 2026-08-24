@@ -1,6 +1,6 @@
 # 004 腾讯云 PostgreSQL UserStore 接入方案（审核稿）
 
-> 状态：004a能力盘点、004b首批9方法和004c三个档案方法已实现并完成云端验收；004d用户活跃与设置迁移稿已完成静态审核；尚未执行004d云端SQL、尚未接入生产适配器选择、尚未切换业务流量。
+> 状态：004a能力盘点、004b首批9方法、004c三个档案方法和004d三个用户活跃/设置方法均已实现并完成云端验收；尚未接入生产适配器选择、尚未切换业务流量。
 
 ## 1. 目标
 
@@ -10,7 +10,7 @@
 
 ## 2. 当前能力盘点
 
-### 2.1 数据库基础已经具备（12项）
+### 2.1 已实现并完成真实云端验证（15项）
 
 | UserStore方法 | 数据库路径 |
 |---|---|
@@ -26,14 +26,16 @@
 | `listEvents` | `app.user_events` 参数化读取、限制条数 |
 | `recordConsent` | `app.record_current_user_consent` |
 | `getLatestConsent` | `app.user_consents` 最新记录读取 |
+| `recordActivity` | `app.record_current_user_activity` 原子返回前次活跃时间并写入数据库当前时间 |
+| `getUserSettings` | `app.users` 当前用户设置参数化读取 |
+| `updateUserTimezone` | `app.update_current_user_timezone` 验证IANA时区并受控更新 |
 
-“数据库基础已经具备”不等于适配器实现或云端契约已经通过。实现状态只能在代码、假连接测试和真实云端验证依次通过后升级为 `implemented_and_verified`。
+以上方法均已通过代码、假连接测试和真实云端回滚沙箱验证。
 
-### 2.2 仍缺数据库结构或等价语义（24项）
+### 2.2 仍缺数据库结构或等价语义（21项）
 
 | 能力组 | UserStore方法 | 缺口 |
 |---|---|---|
-| 活跃与设置 | `recordActivity`, `getUserSettings`, `updateUserTimezone` | `last_active_at`、`timezone`、`locale` 及受控更新路径 |
 | 服务状态 | `getServiceStatus`, `setServiceStatus`, `listServiceTransitions` | 服务状态与转换表、原子RPC |
 | 能量计算 | `recordEnergyCalculation`, `listEnergyCalculations` | 计算快照表与RLS |
 | 方案生命周期 | `createPlanDraft`, `getPlan`, `getActivePlan`, `listPlans`, `transitionPlan`, `activateInitialPlanAndTrial`, `listPlanTransitions` | 方案版本、状态转换及首个计划/试用原子RPC |
@@ -61,7 +63,7 @@
 
 ### 004b：实现核心用户数据适配器
 
-- 实现第2.1节12项。
+- 实现当时第2.1节的12项；004d再增加3项，当前共15项。
 - 未实现方法必须抛出固定错误码 `POSTGRES_USER_STORE_METHOD_UNAVAILABLE`，不得返回空成功结果。
 - 使用假连接验证SQL参数、用户上下文、返回值映射和事务回滚。
 - 不接入 `userStoreProvider` 的生产选择分支。
@@ -115,5 +117,5 @@ node manual-test-tencent-postgres-user-store-capabilities.js
 预期输出包含：
 
 ```json
-{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":12,"schemaRequiredMethodCount":24,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
+{"batch":"004a","status":"PASS","contractMethodCount":38,"databaseReadyMethodCount":15,"schemaRequiredMethodCount":21,"contractChangeRequiredMethodCount":2,"cutoverReady":false}
 ```
