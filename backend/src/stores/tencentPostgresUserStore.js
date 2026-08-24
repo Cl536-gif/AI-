@@ -74,6 +74,21 @@ function mapServiceStatus(userId, value) {
   };
 }
 
+function mapEnergyCalculation(userId, value) {
+  if (!value) return null;
+  return {
+    calculationId: value.calculationId ?? value.calculation_id,
+    userId,
+    formulaId: value.formulaId ?? value.formula_id,
+    formulaVersion: value.formulaVersion ?? value.formula_version,
+    inputs: value.inputs,
+    assumptions: value.assumptions || [],
+    outputs: value.outputs,
+    sourceRefs: value.sourceRefs ?? value.source_refs ?? [],
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+  };
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -405,6 +420,46 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function recordEnergyCalculation(userId, calculation, {
+    now = new Date().toISOString(),
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    if (!calculation || typeof calculation !== 'object' || Array.isArray(calculation)) {
+      throw new Error('能量计算记录格式不正确');
+    }
+    const createdAt = new Date(now);
+    if (Number.isNaN(createdAt.getTime())) throw new Error('能量计算时间格式不正确');
+    const payload = {
+      formulaId: calculation.formulaId,
+      formulaVersion: calculation.formulaVersion,
+      inputs: calculation.inputs,
+      assumptions: calculation.assumptions || [],
+      outputs: calculation.outputs,
+      sourceRefs: calculation.sourceRefs || [],
+    };
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.record_current_user_energy_calculation($1::jsonb, $2::timestamptz) AS result',
+        [JSON.stringify(payload), createdAt.toISOString()]
+      );
+      const saved = mapEnergyCalculation(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL能量计算写入未返回结果');
+      return saved;
+    });
+  }
+
+  async function listEnergyCalculations(userId, { limit = 20 } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT calculation_id, formula_id, formula_version, inputs, assumptions, outputs, source_refs, created_at FROM app.energy_calculations WHERE user_id = $1 ORDER BY created_at DESC, calculation_id DESC LIMIT $2',
+        [normalizedUserId, safeLimit]
+      );
+      return result.rows.map((row) => mapEnergyCalculation(normalizedUserId, row));
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -503,6 +558,8 @@ function createTencentPostgresUserStore({
     getServiceStatus,
     setServiceStatus,
     listServiceTransitions,
+    recordEnergyCalculation,
+    listEnergyCalculations,
     appendEvent,
     getEvent,
     listEvents,

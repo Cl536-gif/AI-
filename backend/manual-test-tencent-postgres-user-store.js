@@ -146,6 +146,47 @@ async function main() {
         },
       ] };
     }
+    if (text.includes('record_current_user_energy_calculation')) {
+      const input = JSON.parse(values[0]);
+      assert.deepStrictEqual(Object.keys(input).sort(), [
+        'assumptions',
+        'formulaId',
+        'formulaVersion',
+        'inputs',
+        'outputs',
+        'sourceRefs',
+      ]);
+      return { rows: [{ result: {
+        calculationId: 'calculation-rpc-1',
+        userId: 'acct:user-1',
+        ...input,
+        createdAt: '2026-08-24T06:00:00.000+00:00',
+      } }] };
+    }
+    if (text.includes('FROM app.energy_calculations')) {
+      return { rows: [
+        {
+          calculation_id: 'calculation-2',
+          formula_id: 'formula-1',
+          formula_version: '1.0.0',
+          inputs: { weightKg: 59.5 },
+          assumptions: [],
+          outputs: { estimatedTeeKcalPerDay: 2394.5 },
+          source_refs: [],
+          created_at: new Date('2026-08-24T06:00:00.000Z'),
+        },
+        {
+          calculation_id: 'calculation-1',
+          formula_id: 'formula-1',
+          formula_version: '1.0.0',
+          inputs: { weightKg: 60 },
+          assumptions: ['adult'],
+          outputs: { estimatedTeeKcalPerDay: 2063.5 },
+          source_refs: ['https://example.invalid/source'],
+          created_at: new Date('2026-08-24T05:00:00.000Z'),
+        },
+      ] };
+    }
     if (text.includes('FROM app.users WHERE user_id = $1 LIMIT 1')) {
       return { rows: [{
         timezone: 'Asia/Shanghai',
@@ -363,6 +404,46 @@ async function main() {
   );
   assert.deepStrictEqual(transitionCall.values, ['acct:user-1', 200]);
 
+  const recordedCalculation = await store.recordEnergyCalculation(
+    'acct:user-1',
+    {
+      formulaId: 'formula-1',
+      formulaVersion: '1.0.0',
+      inputs: { weightKg: 60 },
+      assumptions: ['adult'],
+      outputs: { estimatedTeeKcalPerDay: 2063.5 },
+      sourceRefs: ['https://example.invalid/source'],
+      ignoredDomainField: true,
+    },
+    { now: '2026-08-24T14:00:00+08:00' }
+  );
+  assert.strictEqual(recordedCalculation.calculationId, 'calculation-rpc-1');
+  assert.strictEqual(recordedCalculation.createdAt, '2026-08-24T06:00:00.000Z');
+  const calculationSaveCall = calls.find((call) =>
+    call.text.includes('record_current_user_energy_calculation')
+  );
+  assert.strictEqual(
+    Object.hasOwn(JSON.parse(calculationSaveCall.values[0]), 'ignoredDomainField'),
+    false
+  );
+  assert.strictEqual(calculationSaveCall.values[1], '2026-08-24T06:00:00.000Z');
+
+  const calculations = await store.listEnergyCalculations(
+    'acct:user-1',
+    { limit: 999 }
+  );
+  assert.strictEqual(calculations.length, 2);
+  assert.strictEqual(calculations[0].calculationId, 'calculation-2');
+  assert.strictEqual(calculations[1].assumptions[0], 'adult');
+  const calculationsCall = calls.find((call) =>
+    call.text.includes('FROM app.energy_calculations')
+  );
+  assert.deepStrictEqual(calculationsCall.values, ['acct:user-1', 100]);
+  await assert.rejects(
+    store.recordEnergyCalculation('acct:user-1', {}, { now: 'not-a-time' }),
+    /能量计算时间格式不正确/
+  );
+
   const unavailableMethods = USER_STORE_METHODS
     .filter((methodName) => !DATABASE_READY_METHODS.includes(methodName));
   for (const methodName of unavailableMethods) {
@@ -372,7 +453,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 20);
+  assert.strictEqual(unavailableMethods.length, 18);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -385,10 +466,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004e-adapter',
+    batch: '004f-adapter',
     status: 'PASS',
-    implementedMethodCount: 18,
-    unavailableMethodCount: 20,
+    implementedMethodCount: 20,
+    unavailableMethodCount: 18,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));

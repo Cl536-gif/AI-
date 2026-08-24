@@ -14,6 +14,8 @@ const DATABASE_READY_METHODS = Object.freeze([
   'getServiceStatus',
   'setServiceStatus',
   'listServiceTransitions',
+  'recordEnergyCalculation',
+  'listEnergyCalculations',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -22,8 +24,6 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'recordEnergyCalculation',
-  'listEnergyCalculations',
   'createPlanDraft',
   'getPlan',
   'getActivePlan',
