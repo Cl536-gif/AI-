@@ -8,6 +8,9 @@ const DATABASE_READY_METHODS = Object.freeze([
   'getProfile',
   'updateProfile',
   'listProfileRevisions',
+  'recordActivity',
+  'getUserSettings',
+  'updateUserTimezone',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -16,7 +19,6 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'recordActivity',
   'getServiceStatus',
   'setServiceStatus',
   'listServiceTransitions',
@@ -38,8 +40,6 @@ const SCHEMA_REQUIRED_METHODS = Object.freeze([
   'listAdviceHistory',
   'listUserSummaries',
   'getUserDataSnapshot',
-  'getUserSettings',
-  'updateUserTimezone',
 ]);
 
 const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([

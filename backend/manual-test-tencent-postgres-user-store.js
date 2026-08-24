@@ -88,6 +88,29 @@ async function main() {
       assert.strictEqual(Object.hasOwn(input, 'userId'), false);
       return { rows: [{ result: { userId: 'acct:user-1', ...input } }] };
     }
+    if (text.includes('record_current_user_activity')) {
+      return { rows: [{ result: {
+        previousActiveAt: '2026-08-24T03:59:00.000Z',
+        now: '2026-08-24T04:00:00.000Z',
+      } }] };
+    }
+    if (text.includes('update_current_user_timezone')) {
+      return { rows: [{ result: {
+        userId: 'acct:user-1',
+        timezone: values[0],
+        locale: 'zh-CN',
+        lastActiveAt: '2026-08-24T04:00:00.000Z',
+        createdAt: '2026-08-24T03:00:00.000Z',
+      } }] };
+    }
+    if (text.includes('FROM app.users WHERE user_id = $1 LIMIT 1')) {
+      return { rows: [{
+        timezone: 'Asia/Shanghai',
+        locale: 'zh-CN',
+        last_active_at: new Date('2026-08-24T04:00:00.000Z'),
+        created_at: new Date('2026-08-24T03:00:00.000Z'),
+      }] };
+    }
     if (text.includes('FROM app.user_events') && text.includes('event_id = $2')) {
       return { rows: [eventRow()] };
     }
@@ -238,6 +261,33 @@ async function main() {
   );
   assert.deepStrictEqual(revisionCall.values, ['acct:user-1', 200]);
 
+  const activity = await store.recordActivity('acct:user-1');
+  assert.deepStrictEqual(activity, {
+    previousActiveAt: '2026-08-24T03:59:00.000Z',
+    now: '2026-08-24T04:00:00.000Z',
+  });
+  const settings = await store.getUserSettings('acct:user-1');
+  assert.deepStrictEqual(settings, {
+    userId: 'acct:user-1',
+    timezone: 'Asia/Shanghai',
+    locale: 'zh-CN',
+    lastActiveAt: '2026-08-24T04:00:00.000Z',
+    createdAt: '2026-08-24T03:00:00.000Z',
+  });
+  const updatedSettings = await store.updateUserTimezone(
+    'acct:user-1',
+    ' America/New_York '
+  );
+  assert.strictEqual(updatedSettings.timezone, 'America/New_York');
+  const timezoneCall = calls.find((call) =>
+    call.text.includes('update_current_user_timezone')
+  );
+  assert.deepStrictEqual(timezoneCall.values, ['America/New_York']);
+  await assert.rejects(
+    store.updateUserTimezone('acct:user-1', '   '),
+    /用户时区格式不正确/
+  );
+
   const unavailableMethods = USER_STORE_METHODS
     .filter((methodName) => !DATABASE_READY_METHODS.includes(methodName));
   for (const methodName of unavailableMethods) {
@@ -247,7 +297,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 26);
+  assert.strictEqual(unavailableMethods.length, 23);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -260,10 +310,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004c-adapter',
+    batch: '004d-adapter',
     status: 'PASS',
-    implementedMethodCount: 12,
-    unavailableMethodCount: 26,
+    implementedMethodCount: 15,
+    unavailableMethodCount: 23,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));

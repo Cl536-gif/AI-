@@ -43,6 +43,17 @@ function firstRpcResult(queryResult) {
   return normalizeRpcResult(queryResult?.rows?.[0]?.result ?? null);
 }
 
+function mapUserSettings(userId, value) {
+  if (!value) return null;
+  return {
+    userId,
+    timezone: value.timezone || 'Asia/Shanghai',
+    locale: value.locale || 'zh-CN',
+    lastActiveAt: normalizeTimestamp(value.lastActiveAt ?? value.last_active_at),
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+  };
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -279,6 +290,48 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function recordActivity(userId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.record_current_user_activity() AS result',
+        []
+      );
+      const activity = firstRpcResult(result);
+      if (!activity?.now) throw new Error('PostgreSQL活跃时间写入未返回结果');
+      return {
+        previousActiveAt: normalizeTimestamp(activity.previousActiveAt),
+        now: normalizeTimestamp(activity.now),
+      };
+    });
+  }
+
+  async function getUserSettings(userId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT timezone, locale, last_active_at, created_at FROM app.users WHERE user_id = $1 LIMIT 1',
+        [normalizedUserId]
+      );
+      return mapUserSettings(normalizedUserId, result.rows[0]);
+    });
+  }
+
+  async function updateUserTimezone(userId, timezone) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedTimezone = String(timezone || '').trim();
+    if (!normalizedTimezone) throw new Error('用户时区格式不正确');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.update_current_user_timezone($1) AS result',
+        [normalizedTimezone]
+      );
+      const settings = mapUserSettings(normalizedUserId, firstRpcResult(result));
+      if (!settings) throw new Error('PostgreSQL用户时区更新未返回结果');
+      return settings;
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -371,6 +424,9 @@ function createTencentPostgresUserStore({
     getProfile,
     updateProfile,
     listProfileRevisions,
+    recordActivity,
+    getUserSettings,
+    updateUserTimezone,
     appendEvent,
     getEvent,
     listEvents,
