@@ -80,7 +80,7 @@ async function testSuccessfulTransaction() {
     [
       'connect',
       'BEGIN',
-      "SELECT set_config('app.user_id', $1, true)",
+      "SELECT set_config('app.current_user_id', $1, true)",
       "SET LOCAL statement_timeout = '10000ms'",
       "SET LOCAL lock_timeout = '3000ms'",
       "SET LOCAL idle_in_transaction_session_timeout = '15000ms'",
@@ -165,7 +165,7 @@ async function testBusinessFailureRollsBack() {
 }
 
 async function testSetupAndCommitFailuresRollBack() {
-  const contextSql = "SELECT set_config('app.user_id', $1, true)";
+  const contextSql = "SELECT set_config('app.current_user_id', $1, true)";
   const setupClient = new FakeClient({ failSql: contextSql });
   await assert.rejects(
     withUserTransaction('acct:test-user', async () => {}, transactionOptions(setupClient)),
@@ -211,8 +211,8 @@ async function testBeginFailureDestroysConnection() {
 async function testForbiddenBusinessSqlRollsBack() {
   const forbiddenQueries = [
     ['BEGIN', []],
-    ["SELECT set_config('app.user_id', $1, true)", ['acct:forged']],
-    ['SET app.user_id = $1', ['acct:forged']],
+    ["SELECT set_config('app.current_user_id', $1, true)", ['acct:forged']],
+    ['SET app.current_user_id = $1', ['acct:forged']],
     ['SELECT 1; SELECT 2', []],
     ['SELECT 1 -- hidden statement', []],
   ];
@@ -298,17 +298,17 @@ async function testSequentialUsersDoNotShareContext() {
   const pool = new FakePool(client);
   await withUserTransaction(
     'anon:user-a',
-    async (scopedClient) => scopedClient.query('SELECT current_setting($1, true)', ['app.user_id']),
+    async (scopedClient) => scopedClient.query('SELECT current_setting($1, true)', ['app.current_user_id']),
     { pool, config: transactionConfig }
   );
   await withUserTransaction(
     'acct:user-b',
-    async (scopedClient) => scopedClient.query('SELECT current_setting($1, true)', ['app.user_id']),
+    async (scopedClient) => scopedClient.query('SELECT current_setting($1, true)', ['app.current_user_id']),
     { pool, config: transactionConfig }
   );
 
   const contextBindings = client.events
-    .filter((event) => event.text === "SELECT set_config('app.user_id', $1, true)")
+    .filter((event) => event.text === "SELECT set_config('app.current_user_id', $1, true)")
     .map((event) => event.values[0]);
   assert.deepStrictEqual(contextBindings, ['anon:user-a', 'acct:user-b']);
   assert.strictEqual(client.events.filter((event) => event.text === 'BEGIN').length, 2);

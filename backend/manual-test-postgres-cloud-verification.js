@@ -31,7 +31,7 @@ async function readConnectionState(pool) {
         '       current_user AS role_name,',
         '       pg_backend_pid() AS backend_pid,',
         '       app.current_user_id() AS user_context,',
-        "       current_setting('app.user_id', true) AS raw_user_context,",
+        "       current_setting('app.current_user_id', true) AS raw_user_context,",
         '       (SELECT count(*)::int FROM app.users) AS visible_users,',
         '       (SELECT count(*)::int FROM app.user_events) AS visible_events',
       ].join('\n'),
@@ -116,18 +116,18 @@ async function verifySandboxedDatabaseRules(pool, ids, evidence) {
   try {
     await client.query('BEGIN');
     transactionOpen = true;
-    await client.query("SELECT set_config('app.user_id', $1, true)", [ids.userA]);
+    await client.query("SELECT set_config('app.current_user_id', $1, true)", [ids.userA]);
     await client.query(
       "INSERT INTO app.users (user_id, status) VALUES ($1, 'active')",
       [ids.userA]
     );
-    await client.query("SELECT set_config('app.user_id', $1, true)", [ids.userB]);
+    await client.query("SELECT set_config('app.current_user_id', $1, true)", [ids.userB]);
     await client.query(
       "INSERT INTO app.users (user_id, status) VALUES ($1, 'active')",
       [ids.userB]
     );
 
-    await client.query("SELECT set_config('app.user_id', $1, true)", [ids.userA]);
+    await client.query("SELECT set_config('app.current_user_id', $1, true)", [ids.userA]);
     const hiddenUser = await client.query(
       'SELECT count(*)::int AS count FROM app.users WHERE user_id = $1',
       [ids.userB]
@@ -209,7 +209,7 @@ async function verifySandboxedDatabaseRules(pool, ids, evidence) {
     cleanupTransactionOpen = true;
     const counts = [];
     for (const userId of [ids.userA, ids.userB]) {
-      await cleanupClient.query("SELECT set_config('app.user_id', $1, true)", [userId]);
+      await cleanupClient.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
       const result = await cleanupClient.query(
         [
           'SELECT',

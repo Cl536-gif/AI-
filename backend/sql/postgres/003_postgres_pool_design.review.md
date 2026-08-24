@@ -11,7 +11,7 @@
 为 Node.js 后端建立一个使用 `diet_app` 账号的 PostgreSQL 连接池，使后续 `UserStore` 腾讯云适配器只能通过受控事务访问数据库，并验证：
 
 - 连接池可以建立、复用和关闭连接。
-- 每个用户业务事务都先以参数化方式绑定 `app.user_id`。
+- 每个用户业务事务都先以参数化方式绑定 `app.current_user_id`。
 - 用户上下文只在当前事务有效，连接归还池后不会泄漏给下一个用户。
 - SQL 或 RPC 失败时先回滚，再归还连接；回滚失败时销毁该连接。
 - 连接池耗尽、数据库超时或进程关闭时行为确定，不产生悬挂事务。
@@ -141,13 +141,13 @@ TENCENT_PG_IDLE_TX_TIMEOUT_MS=15000
 
 ## 6. 用户上下文事务护栏
 
-RLS 依赖 `app.current_user_id()` 读取事务内配置 `app.user_id`。连接池复用连接时，禁止使用会残留到后续请求的会话级 `SET`。
+RLS 依赖 `app.current_user_id()` 读取事务内配置 `app.current_user_id`。连接池复用连接时，禁止使用会残留到后续请求的会话级 `SET`。
 
 每次用户业务调用必须遵循同一个不可绕过的顺序：
 
 ```sql
 BEGIN;
-SELECT set_config('app.user_id', $1, true);
+SELECT set_config('app.current_user_id', $1, true);
 SET LOCAL statement_timeout = '...';
 SET LOCAL lock_timeout = '...';
 SET LOCAL idle_in_transaction_session_timeout = '...';
@@ -168,7 +168,7 @@ COMMIT;
 - `ROLLBACK` 本身失败时，不把连接放回池，而是销毁。
 - 回调结束后作用域客户端立即失效；仍在运行或已经失败但未等待的查询会阻止提交并触发回滚。
 - `UserIdSchema`、回调类型和事务超时范围在借用连接前完成校验；注入测试配置也不能绕过003a的超时上下限。
-- 不允许业务调用覆盖 `app.user_id`，也不向普通回调暴露设置会话级参数的辅助接口。
+- 不允许业务调用覆盖 `app.current_user_id`，也不向普通回调暴露设置会话级参数的辅助接口。
 - RPC 的目标用户仍由 `app.current_user_id()` 读取；不因使用连接池而改为信任客户端传入的目标用户ID。
 
 ## 7. 健康检查与关闭
@@ -182,7 +182,7 @@ COMMIT;
 新增 `/api/ready`：
 
 - 从连接池独占借用一个客户端，以客户端侧 `query_timeout=2000ms` 执行固定只读查询。
-- 同时核对 `current_database() = 'diet_secretary'`、`current_user = 'diet_app'`，并要求 `current_setting('app.user_id', true)` 为空，主动发现会话上下文泄漏。
+- 同时核对 `current_database() = 'diet_secretary'`、`current_user = 'diet_app'`，并要求 `current_setting('app.current_user_id', true)` 为空，主动发现会话上下文泄漏。
 - 成功固定返回 HTTP 200 和 `{ "status": "ready" }`；失败固定返回 HTTP 503 和 `{ "status": "not_ready" }`。
 - 查询错误、超时、身份不符或上下文残留时以 `release(error)` 销毁该连接，不把状态不确定的连接放回池。
 - 响应和日志都不暴露主机、账号、数据库实际值、SQL 原文、错误原文、密码或连接串；诊断日志只保留固定事件名和经过格式白名单的错误码。

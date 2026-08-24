@@ -9,7 +9,7 @@ const DEFAULT_READINESS_TIMEOUT_MS = 2000;
 const READINESS_SQL = [
   'SELECT current_database() AS database_name,',
   '       current_user AS role_name,',
-  "       current_setting('app.user_id', true) AS user_context",
+  "       current_setting('app.current_user_id', true) AS user_context",
 ].join('\n');
 
 function createReadinessError(code) {

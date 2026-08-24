@@ -205,7 +205,7 @@ async function withUserTransaction(userId, callback, options = {}) {
     await client.query('BEGIN');
     transactionStarted = true;
     await client.query(
-      "SELECT set_config('app.user_id', $1, true)",
+      "SELECT set_config('app.current_user_id', $1, true)",
       [normalizedUserId]
     );
     await client.query(`SET LOCAL statement_timeout = '${config.statementTimeoutMs}ms'`);
