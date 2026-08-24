@@ -1,0 +1,25 @@
+004h cloud acceptance raw and user-confirmed results
+Date: 2026-08-24 Asia/Shanghai
+
+[DMS preflight readonly]
+"PASS","true","true","true","true","0","0","0","0"
+
+[DMS migration]
+Initial plan and trial activation RPC migration completed successfully.
+
+[DMS postflight readonly]
+"PASS","true","true","true","true","true","0","0","0","0"
+
+[DMS rollback functional sandbox - first attempt]
+ERROR: invalid configuration parameter name "app.004h_verify_plan_a"
+The transaction had no COMMIT. The test-only parameter name was corrected before retry.
+
+[DMS rollback functional sandbox - corrected retry]
+atomic_activation_and_histories_verified=PASS
+idempotent_retry_verified=PASS
+invalid_activation_rolled_back=PASS
+cross_user_rls_isolation=PASS
+rollback_cleanup_status=PASS
+
+[CloudBase 019 adapter rollback sandbox]
+{"batch":"004h-adapter-cloud","status":"PASS","processPid":60,"checkCount":7,"cleanup":"PASS"}

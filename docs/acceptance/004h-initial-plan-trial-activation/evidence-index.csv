@@ -1,0 +1,7 @@
+evidence_id,stage,environment,result,source
+004h-01,preflight,Tencent DMS,PASS,raw-results.txt
+004h-02,migration,Tencent DMS,COMPLETED,raw-results.txt
+004h-03,postflight,Tencent DMS,PASS,raw-results.txt
+004h-04,first functional sandbox attempt,Tencent PostgreSQL,TEST SCRIPT ERROR NO COMMIT,raw-results.txt
+004h-05,corrected functional rollback sandbox,Tencent PostgreSQL,5/5 PASS cleanup PASS,raw-results.txt
+004h-06,adapter rollback sandbox,CloudBase 019,7/7 PASS cleanup PASS,raw-results.txt
