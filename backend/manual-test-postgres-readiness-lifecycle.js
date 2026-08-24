@@ -12,6 +12,10 @@ const {
   getPostgresPool,
   resetPostgresPoolForTests,
 } = require('./src/db/postgresPool');
+const {
+  classifyPostgresError,
+  safePostgresErrorDetails,
+} = require('./src/db/postgresDiagnostics');
 const { createGracefulShutdown } = require('./src/serverLifecycle');
 
 const poolConfig = Object.freeze({
@@ -141,6 +145,40 @@ async function testReadinessHandlerIsGenericAndRedacted() {
   await createPostgresReadinessHandler({ check: async () => ({ ready: true }) })({}, successResponse);
   assert.strictEqual(successResponse.statusCode, 200);
   assert.deepStrictEqual(successResponse.body, { status: 'ready' });
+}
+
+function testUnknownErrorsUseSafeDiagnosticCategories() {
+  const cases = [
+    ['The server does not support SSL connections', 'SSL_UNSUPPORTED'],
+    ['self-signed certificate in certificate chain', 'TLS_CERTIFICATE_ERROR'],
+    ['SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string', 'AUTHENTICATION_FAILED'],
+    ['connect ECONNREFUSED 10.0.0.2:5432', 'CONNECTION_REFUSED'],
+    ['connection timeout expired for secret.internal', 'CONNECTION_TIMEOUT'],
+    ['getaddrinfo ENOTFOUND secret.internal', 'HOST_RESOLUTION_FAILED'],
+    ['no pg_hba.conf entry for host "10.0.0.2"', 'ACCESS_RULE_REJECTED'],
+    ['缺少必填环境变量 TENCENT_PG_PASSWORD', 'CONFIGURATION_ERROR'],
+  ];
+
+  for (const [message, expected] of cases) {
+    const error = new Error(message);
+    assert.strictEqual(classifyPostgresError(error), expected);
+    const serialized = JSON.stringify(safePostgresErrorDetails(error, 'test_event'));
+    assert(serialized.includes(expected));
+    assert(!serialized.includes(message));
+    assert(!serialized.includes('10.0.0.2'));
+    assert(!serialized.includes('secret.internal'));
+  }
+
+  const nested = new Error('outer wrapper');
+  nested.cause = new Error('The server does not support SSL connections');
+  assert.strictEqual(classifyPostgresError(nested), 'SSL_UNSUPPORTED');
+
+  const sqlState = new Error('password=do-not-log');
+  sqlState.code = '28P01';
+  assert.deepStrictEqual(
+    safePostgresErrorDetails(sqlState, 'test_event'),
+    { event: 'test_event', code: '28P01' }
+  );
 }
 
 async function testPoolErrorListenerAndIdempotentClose() {
@@ -277,6 +315,7 @@ async function main() {
   await testReadinessSuccess();
   await testReadinessMismatchDestroysConnection();
   await testReadinessHandlerIsGenericAndRedacted();
+  testUnknownErrorsUseSafeDiagnosticCategories();
   await testPoolErrorListenerAndIdempotentClose();
   await testGracefulShutdownIsBoundedAndIdempotent();
   testServerWiringKeepsHealthSeparate();
@@ -284,6 +323,7 @@ async function main() {
   console.log('PASS: readiness uses a bounded query and verifies database, role, and empty user context');
   console.log('PASS: readiness mismatch or query failure destroys the borrowed connection');
   console.log('PASS: readiness responses and PostgreSQL diagnostics do not expose secrets');
+  console.log('PASS: code-less PostgreSQL failures map to fixed redacted categories');
   console.log('PASS: idle pool errors are handled with allowlisted diagnostics');
   console.log('PASS: pool close is idempotent and blocks reuse after shutdown starts');
   console.log('PASS: SIGTERM/SIGINT shutdown drains HTTP, closes resources, and has a hard timeout');
