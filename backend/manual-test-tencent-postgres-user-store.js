@@ -453,7 +453,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 12);
+  assert.strictEqual(unavailableMethods.length, 11);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -466,10 +466,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004g-adapter',
+    batch: '004h-adapter',
     status: 'PASS',
-    implementedMethodCount: 26,
-    unavailableMethodCount: 12,
+    implementedMethodCount: 27,
+    unavailableMethodCount: 11,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));

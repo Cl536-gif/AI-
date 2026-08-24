@@ -580,6 +580,38 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function activateInitialPlanAndTrial(userId, planId, {
+    trialStartedAt,
+    trialEndsAt,
+    renewalReminderAt,
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) throw new Error('正式计划ID不能为空');
+    const timestamps = {
+      trialStartedAt: new Date(trialStartedAt),
+      trialEndsAt: new Date(trialEndsAt),
+      renewalReminderAt: new Date(renewalReminderAt),
+    };
+    for (const [label, value] of Object.entries(timestamps)) {
+      if (Number.isNaN(value.getTime())) throw new Error(`${label}格式不正确`);
+    }
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.activate_current_user_initial_plan_and_trial($1, $2::timestamptz, $3::timestamptz, $4::timestamptz) AS result',
+        [
+          normalizedPlanId,
+          timestamps.trialStartedAt.toISOString(),
+          timestamps.trialEndsAt.toISOString(),
+          timestamps.renewalReminderAt.toISOString(),
+        ]
+      );
+      const saved = mapPlan(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL首个计划与体验激活未返回结果');
+      return saved;
+    });
+  }
+
   async function listPlanTransitions(userId, planId) {
     const normalizedUserId = UserIdSchema.parse(userId);
     const normalizedPlanId = String(planId || '').trim();
@@ -700,6 +732,7 @@ function createTencentPostgresUserStore({
     getActivePlan,
     listPlans,
     transitionPlan,
+    activateInitialPlanAndTrial,
     listPlanTransitions,
     appendEvent,
     getEvent,
