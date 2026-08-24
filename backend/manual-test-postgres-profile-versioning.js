@@ -42,5 +42,5 @@ console.log(JSON.stringify({
   status: 'PASS',
   unifiedLedgerContainsSensitiveSnapshot: false,
   optimisticConflictCode: '40001',
-  cloudSqlExecuted: false,
+  staticTestExecutesCloudSql: false,
 }));

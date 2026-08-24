@@ -1,0 +1,8 @@
+evidence_id,scope,result,source
+004c-preflight,"Required baseline, permissions, no orphan profiles and no target conflicts",PASS,raw-results.txt
+004c-deploy,"DMC transactional schema and RPC migration",PASS,raw-results.txt
+004c-postflight,"Tables, RLS, owners and function privileges",PASS,raw-results.txt
+004c-versioning,"Unified versions 1 through 3 and sensitive split",PASS,raw-results.txt
+004c-concurrency,"Stale expectedVersion rejected with SQLSTATE 40001",PASS,raw-results.txt
+004c-isolation,"Cross-user RLS and rollback cleanup",PASS,raw-results.txt
+
