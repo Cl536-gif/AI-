@@ -1,0 +1,14 @@
+{"batch":"003d","check":"verification_started","status":"PASS","at":"2026-08-24T03:32:36.727Z","processPid":74,"adapterRemainsSqlite":true,"privateNetworkGuardPassed":true,"testPoolMax":1}
+{"batch":"003d","check":"database_identity_and_readiness_verified","status":"PASS","at":"2026-08-24T03:32:36.752Z","backendPid":71421,"databaseMatched":true,"roleMatched":true,"userContextEmpty":true,"rawUserContextEmpty":true}
+{"batch":"003d","check":"user_a_transaction_committed","status":"PASS","at":"2026-08-24T03:32:36.757Z","backendPid":71421,"userContext":"acct:003d_a_8634330f45180a80"}
+{"batch":"003d","check":"same_connection_context_cleared","status":"PASS","at":"2026-08-24T03:32:36.759Z","backendPid":71421,"userContextEmpty":true,"rawUserContextEmpty":true,"visibleUsers":0,"visibleEvents":0}
+{"batch":"003d","check":"same_connection_user_b_isolated","status":"PASS","at":"2026-08-24T03:32:36.762Z","backendPid":71421,"userContext":"acct:003d_b_8634330f45180a80"}
+{"batch":"003d","check":"sql_error_rolled_back_and_connection_recovered","status":"PASS","at":"2026-08-24T03:32:36.768Z","errorCode":"22012","backendPid":71421}
+{"batch":"003d","check":"rls_and_idempotent_rpc_verified_in_sandbox","status":"PASS","at":"2026-08-24T03:32:36.781Z","backendPid":71421,"crossUserRowsVisible":0,"rpcRowsCreated":1,"replayMatched":true}
+{"batch":"003d","check":"diet_app_create_in_app_rejected","status":"PASS","at":"2026-08-24T03:32:36.782Z","backendPid":71421,"errorCode":"42501"}
+{"batch":"003d","check":"sandbox_transaction_rolled_back","status":"PASS","at":"2026-08-24T03:32:36.783Z","backendPid":71421,"cleanup":"rollback"}
+{"batch":"003d","check":"sandbox_cleanup_proven","status":"PASS","at":"2026-08-24T03:32:36.786Z","backendPid":71421,"remainingUsers":0,"remainingEvents":0}
+{"batch":"003d","check":"pool_exhaustion_timed_out_and_recovered","status":"PASS","at":"2026-08-24T03:32:37.537Z","backendPid":71421,"errorCode":"POOL_CONNECT_TIMEOUT","waitMs":750}
+{"batch":"003d","check":"pool_end_rejects_new_borrow","status":"PASS","at":"2026-08-24T03:32:37.537Z","rejected":true}
+{"batch":"003d","status":"PASS","processPid":74,"checkCount":12,"cleanup":"PASS"}
+

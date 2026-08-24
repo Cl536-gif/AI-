@@ -1,0 +1,5 @@
+evidence_id,scope,result,source
+003-health,"CloudBase version 010 health endpoint",PASS,README.md
+003-ready,"CloudBase version 010 PostgreSQL readiness endpoint",PASS,README.md
+003d-cloud,"Private-VPC PostgreSQL pool verification 12 of 12",PASS,raw-results.jsonl
+003d-cleanup,"Sandbox cleanup: remaining users and events both zero",PASS,raw-results.jsonl
