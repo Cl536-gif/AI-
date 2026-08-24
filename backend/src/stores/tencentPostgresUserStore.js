@@ -57,6 +57,23 @@ function mapUserSettings(userId, value) {
   };
 }
 
+function mapServiceStatus(userId, value) {
+  if (!value) return null;
+  return {
+    userId,
+    status: value.status,
+    trialStartedAt: normalizeTimestamp(
+      value.trialStartedAt ?? value.trial_started_at
+    ),
+    trialEndsAt: normalizeTimestamp(value.trialEndsAt ?? value.trial_ends_at),
+    renewalReminderAt: normalizeTimestamp(
+      value.renewalReminderAt ?? value.renewal_reminder_at
+    ),
+    officialPlanId: value.officialPlanId ?? value.official_plan_id ?? null,
+    updatedAt: normalizeTimestamp(value.updatedAt ?? value.updated_at),
+  };
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -335,6 +352,59 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function getServiceStatus(userId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT status, trial_started_at, trial_ends_at, renewal_reminder_at, official_plan_id, updated_at FROM app.user_service_status WHERE user_id = $1 LIMIT 1',
+        [normalizedUserId]
+      );
+      return mapServiceStatus(normalizedUserId, result.rows[0]);
+    });
+  }
+
+  async function setServiceStatus(userId, next, { reason = 'unspecified' } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    if (!next || typeof next !== 'object' || Array.isArray(next)) {
+      throw new Error('服务状态参数格式不正确');
+    }
+    const payload = {
+      status: next.status,
+      trialStartedAt: next.trialStartedAt ?? null,
+      trialEndsAt: next.trialEndsAt ?? null,
+      renewalReminderAt: next.renewalReminderAt ?? null,
+      officialPlanId: next.officialPlanId ?? null,
+    };
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.set_current_user_service_status($1::jsonb, $2) AS result',
+        [JSON.stringify(payload), String(reason || 'unspecified')]
+      );
+      const status = mapServiceStatus(normalizedUserId, firstRpcResult(result));
+      if (!status) throw new Error('PostgreSQL服务状态写入未返回结果');
+      return status;
+    });
+  }
+
+  async function listServiceTransitions(userId, { limit = 50 } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT transition_id, from_status, to_status, reason, occurred_at FROM app.user_service_transitions WHERE user_id = $1 ORDER BY occurred_at DESC, transition_id DESC LIMIT $2',
+        [normalizedUserId, safeLimit]
+      );
+      return result.rows.map((row) => ({
+        transitionId: row.transition_id,
+        userId: normalizedUserId,
+        fromStatus: row.from_status ?? null,
+        toStatus: row.to_status,
+        reason: row.reason,
+        occurredAt: normalizeTimestamp(row.occurred_at),
+      }));
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -430,6 +500,9 @@ function createTencentPostgresUserStore({
     recordActivity,
     getUserSettings,
     updateUserTimezone,
+    getServiceStatus,
+    setServiceStatus,
+    listServiceTransitions,
     appendEvent,
     getEvent,
     listEvents,

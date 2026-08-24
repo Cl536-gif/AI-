@@ -103,6 +103,49 @@ async function main() {
         createdAt: '2026-08-24T03:00:00.000Z',
       } }] };
     }
+    if (text.includes('set_current_user_service_status')) {
+      const input = JSON.parse(values[0]);
+      assert.deepStrictEqual(Object.keys(input).sort(), [
+        'officialPlanId',
+        'renewalReminderAt',
+        'status',
+        'trialEndsAt',
+        'trialStartedAt',
+      ]);
+      return { rows: [{ result: {
+        userId: 'acct:user-1',
+        ...input,
+        updatedAt: '2026-08-24T05:00:00.000+00:00',
+      } }] };
+    }
+    if (text.includes('FROM app.user_service_status WHERE user_id = $1')) {
+      return { rows: [{
+        status: 'trial_active',
+        trial_started_at: new Date('2026-08-24T04:00:00.000Z'),
+        trial_ends_at: new Date('2026-09-07T04:00:00.000Z'),
+        renewal_reminder_at: new Date('2026-09-06T04:00:00.000Z'),
+        official_plan_id: 'plan-1',
+        updated_at: new Date('2026-08-24T04:00:01.000Z'),
+      }] };
+    }
+    if (text.includes('FROM app.user_service_transitions')) {
+      return { rows: [
+        {
+          transition_id: 'transition-2',
+          from_status: 'profile_confirmed',
+          to_status: 'trial_active',
+          reason: 'first_official_plan_delivered',
+          occurred_at: new Date('2026-08-24T04:00:01.000Z'),
+        },
+        {
+          transition_id: 'transition-1',
+          from_status: null,
+          to_status: 'profile_confirmed',
+          reason: 'profile_confirmed_by_user',
+          occurred_at: new Date('2026-08-24T03:00:00.000Z'),
+        },
+      ] };
+    }
     if (text.includes('FROM app.users WHERE user_id = $1 LIMIT 1')) {
       return { rows: [{
         timezone: 'Asia/Shanghai',
@@ -288,6 +331,38 @@ async function main() {
     /用户时区格式不正确/
   );
 
+  const serviceStatus = await store.getServiceStatus('acct:user-1');
+  assert.strictEqual(serviceStatus.status, 'trial_active');
+  assert.strictEqual(serviceStatus.trialStartedAt, '2026-08-24T04:00:00.000Z');
+  const savedServiceStatus = await store.setServiceStatus(
+    'acct:user-1',
+    {
+      ...serviceStatus,
+      status: 'trial_expired',
+    },
+    { reason: 'trial_period_ended_without_subscription' }
+  );
+  assert.strictEqual(savedServiceStatus.status, 'trial_expired');
+  const serviceSaveCall = calls.find((call) =>
+    call.text.includes('set_current_user_service_status')
+  );
+  assert.strictEqual(serviceSaveCall.values[1], 'trial_period_ended_without_subscription');
+  const servicePayload = JSON.parse(serviceSaveCall.values[0]);
+  assert.strictEqual(Object.hasOwn(servicePayload, 'userId'), false);
+  assert.strictEqual(Object.hasOwn(servicePayload, 'updatedAt'), false);
+
+  const serviceTransitions = await store.listServiceTransitions(
+    'acct:user-1',
+    { limit: 999 }
+  );
+  assert.strictEqual(serviceTransitions.length, 2);
+  assert.strictEqual(serviceTransitions[0].toStatus, 'trial_active');
+  assert.strictEqual(serviceTransitions[1].fromStatus, null);
+  const transitionCall = calls.find((call) =>
+    call.text.includes('FROM app.user_service_transitions')
+  );
+  assert.deepStrictEqual(transitionCall.values, ['acct:user-1', 200]);
+
   const unavailableMethods = USER_STORE_METHODS
     .filter((methodName) => !DATABASE_READY_METHODS.includes(methodName));
   for (const methodName of unavailableMethods) {
@@ -297,7 +372,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 23);
+  assert.strictEqual(unavailableMethods.length, 20);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -310,10 +385,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004d-adapter',
+    batch: '004e-adapter',
     status: 'PASS',
-    implementedMethodCount: 15,
-    unavailableMethodCount: 23,
+    implementedMethodCount: 18,
+    unavailableMethodCount: 20,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));
