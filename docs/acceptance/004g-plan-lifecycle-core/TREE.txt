@@ -1,0 +1,6 @@
+004g-plan-lifecycle-core/
+├── MANIFEST.sha256
+├── README.md
+├── TREE.txt
+├── evidence-index.csv
+└── raw-results.txt

@@ -1,0 +1,23 @@
+004g cloud acceptance raw and user-confirmed results
+Date: 2026-08-24 Asia/Shanghai
+
+[DMC preflight readonly]
+"PASS","true","true","true","true","true","true","true","0","0","0"
+
+[DMC migration]
+SQL change work order completed successfully against database diet_secretary.
+
+[DMC postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","true","true","true","true","0","0"
+
+[DMC rollback functional sandbox]
+plan_version_state_machine_and_invalid_paths_verified=PASS
+cross_user_rls_isolation=PASS
+rollback_cleanup_status=PASS
+
+[CloudBase 018 adapter guard]
+{"batch":"004g-adapter-cloud","status":"FAIL","processPid":35,"errorCode":"VERIFY_CONFIRMATION_REQUIRED"}
+Expected guard result before the explicit confirmation variable was supplied; no database verification started.
+
+[CloudBase 018 adapter rollback sandbox]
+{"batch":"004g-adapter-cloud","status":"PASS","processPid":42,"checkCount":10,"cleanup":"PASS"}
