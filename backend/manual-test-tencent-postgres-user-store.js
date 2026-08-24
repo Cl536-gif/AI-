@@ -90,8 +90,8 @@ async function main() {
     }
     if (text.includes('record_current_user_activity')) {
       return { rows: [{ result: {
-        previousActiveAt: '2026-08-24T03:59:00.000Z',
-        now: '2026-08-24T04:00:00.000Z',
+        previousActiveAt: '2026-08-24T03:59:00.000+00:00',
+        now: '2026-08-24T04:00:00.000+00:00',
       } }] };
     }
     if (text.includes('update_current_user_timezone')) {

@@ -27,7 +27,10 @@ const CONSENT_TYPES = new Set([
 
 function normalizeTimestamp(value) {
   if (value instanceof Date) return value.toISOString();
-  return value == null ? null : String(value);
+  if (value == null) return null;
+  const text = String(value);
+  const timestamp = Date.parse(text);
+  return Number.isNaN(timestamp) ? text : new Date(timestamp).toISOString();
 }
 
 function normalizeRpcResult(value) {
