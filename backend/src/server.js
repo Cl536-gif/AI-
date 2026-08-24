@@ -5,6 +5,8 @@ const config = require('./config');
 const chatRouter = require('./routes/chat');
 const chatLocalRouter = require('./routes/chatLocal');
 const chatLanggraphRouter = require('./routes/chatLanggraph');
+const { createPostgresReadinessHandler } = require('./db/postgresReadiness');
+const { createGracefulShutdown } = require('./serverLifecycle');
 
 const app = express();
 
@@ -14,6 +16,8 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+app.get('/api/ready', createPostgresReadinessHandler());
 
 app.use('/api/chat', chatRouter);
 app.use('/api/chat-local', chatLocalRouter);
@@ -31,6 +35,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || '服务器内部错误' });
 });
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`后端服务已启动: http://localhost:${config.port}`);
 });
+
+createGracefulShutdown({ server });
