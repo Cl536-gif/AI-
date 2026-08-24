@@ -1,0 +1,6 @@
+evidence_id,stage,environment,result,source
+004f-01,preflight,Tencent DMC,PASS,raw-results.txt
+004f-02,migration final state,Tencent DMC,CONFIRMED BY POSTFLIGHT,raw-results.txt
+004f-03,postflight,Tencent DMC,PASS,raw-results.txt
+004f-04,functional rollback sandbox,Tencent PostgreSQL,PASS cleanup PASS,raw-results.txt
+004f-05,adapter rollback sandbox,CloudBase 017,7/7 PASS cleanup PASS,raw-results.txt

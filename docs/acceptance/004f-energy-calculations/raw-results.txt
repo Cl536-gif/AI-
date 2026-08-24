@@ -1,0 +1,21 @@
+004f cloud acceptance raw and user-confirmed results
+Date: 2026-08-24 Asia/Shanghai
+
+[DMC preflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","0","0","0"
+
+[DMC migration and reconciliation]
+Repeated execution returned: relation "energy_calculations" already exists.
+No destructive action was taken. Postflight below is the authoritative final-state proof.
+
+[DMC postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","0"
+
+[DMC rollback functional sandbox]
+append_order_and_snapshot_verified=PASS
+invalid_payloads_rejected_without_mutation=PASS
+cross_user_rls_isolation=PASS
+rollback_cleanup_status=PASS
+
+[CloudBase 017 adapter rollback sandbox]
+{"batch":"004f-adapter-cloud","status":"PASS","processPid":35,"checkCount":7,"cleanup":"PASS"}
