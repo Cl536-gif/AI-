@@ -1,12 +1,23 @@
 const { z } = require('zod');
 
+// 用户档案字段联动规则（严格拒绝 / fail closed）：
+// 新增、删除或重命名档案字段时，必须在同一次变更中同步更新：
+// 1. 本文件的 Zod 契约；2. PostgreSQL 建表/迁移脚本；
+// 3. app.save_current_user_profile RPC 的字段白名单、映射和数据库快照；
+// 4. 契约测试、RPC 正常路径测试和失败回滚测试。
+// 任一处遗漏都应由 RPC 白名单拒绝，禁止临时放宽校验绕过。
+
 const USER_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 const UserIdSchema = z.string().trim().regex(USER_ID_REGEX, 'userId格式不正确');
 
 const BodyProfileSchema = z.object({
+    equationSex: z.enum(['female', 'male']).nullable().default(null),
     ageYears: z.number().min(14).max(100).nullable().default(null),
     heightCm: z.number().min(120).max(230).nullable().default(null),
+    // 档案中的“当前体重”规范值：用于读取用户当前身体状态。
+    // 单次称重必须追加为 body_measurement 事件的 payload.weightKg，
+    // 不要把事件时间点值与该档案字段混写。
     currentWeightKg: z.number().min(10).max(500).nullable().default(null),
     targetWeightKg: z.number().min(10).max(500).nullable().default(null),
     dailyActivity: z.string().max(200).nullable().default(null),
@@ -36,6 +47,7 @@ const UserProfileSchema = z.object({
 });
 
 const BodyProfilePatchSchema = z.object({
+  equationSex: z.enum(['female', 'male']).nullable().optional(),
   ageYears: z.number().min(14).max(100).nullable().optional(),
   heightCm: z.number().min(120).max(230).nullable().optional(),
   currentWeightKg: z.number().min(10).max(500).nullable().optional(),

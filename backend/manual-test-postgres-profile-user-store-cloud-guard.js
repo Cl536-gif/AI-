@@ -3,6 +3,10 @@ const {
   CONFIRMATION,
   assert004cCloudEnvironment,
 } = require('./manual-test-postgres-profile-user-store-cloud');
+const {
+  UserProfileSchema,
+  UserProfilePatchSchema,
+} = require('./src/domain/userDataContract');
 
 const validEnv = {
   RUN_004C_PROFILE_STORE_VERIFY: CONFIRMATION,
@@ -47,10 +51,18 @@ assert.throws(
   (error) => error.code === 'PRIVATE_IPV4_REQUIRED'
 );
 
+assert.strictEqual(
+  UserProfileSchema.parse({ body: { equationSex: 'female' } }).body.equationSex,
+  'female'
+);
+assert.strictEqual(
+  UserProfilePatchSchema.parse({ body: { equationSex: 'female' } }).body.equationSex,
+  'female'
+);
+
 console.log(JSON.stringify({
   batch: '004c-adapter-cloud',
   check: 'local_cloud_guard',
   status: 'PASS',
   networkUsed: false,
 }));
-
