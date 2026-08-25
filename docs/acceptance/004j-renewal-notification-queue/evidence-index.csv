@@ -1,0 +1,9 @@
+evidence_id,stage,environment,result,source
+004j-01,preflight,Tencent DMS,PASS,raw-results.txt
+004j-02,migration,Tencent DMS,COMPLETED,raw-results.txt
+004j-03,initial functional sandbox,Tencent PostgreSQL,EXPECTED FAILURE NO COMMIT,raw-results.txt
+004j-04,enqueue visibility repair,Tencent DMS,COMPLETED,raw-results.txt
+004j-05,enhanced postflight,Tencent DMS,PASS 15/15 STRUCTURE CHECKS,raw-results.txt
+004j-06,corrected functional rollback sandbox,Tencent PostgreSQL,5/5 PASS cleanup PASS,raw-results.txt
+004j-07,local adapter and guard tests,Local Node.js,PASS 32/38 READY CUTOVER FALSE,raw-results.txt
+004j-08,adapter rollback sandbox,CloudBase 021,8/8 PASS cleanup PASS,raw-results.txt

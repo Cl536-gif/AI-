@@ -1,0 +1,55 @@
+004j renewal notification queue cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git database batch]
+ed97166 Add PostgreSQL renewal notification queue
+
+[DMS preflight readonly]
+"PASS","true","true","true","true","true","true","true","0","0","0"
+
+[DMS migration]
+Notification table, pending index and three controlled background functions completed successfully.
+
+[DMS postflight readonly before repair]
+PASS with all structure, RLS, privilege, index and function checks true; notification counts were zero.
+
+[DMS rollback functional sandbox - first attempt]
+ERROR: 004j到期入队或幂等重试断言失败
+Root cause: a data-modifying CTE and its main query shared the old snapshot, so the first RPC result could not reread the inserted row. The transaction had no COMMIT.
+
+[Git repair batch]
+5a9f459 Fix renewal notification enqueue result visibility
+
+[DMS enqueue visibility repair]
+The transaction replaced only app.enqueue_due_renewal_reminders and completed successfully. The notification table migration was not rerun.
+
+[DMS enhanced postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","true","true","true","true","0","0"
+
+[DMS rollback functional sandbox - corrected retry]
+reminder_not_enqueued_early=PASS
+due_reminder_enqueued_idempotently=PASS
+pending_queue_and_rpc_only_access_verified=PASS
+expired_trial_skipped=PASS
+notification_marked_sent_once=PASS
+cleanup="PASS","0","0","0","0"
+
+[Local adapter verification]
+adapter_methods=3 PASS
+contract_methods=38
+database_ready_methods=32
+schema_required_methods=4
+contract_change_required_methods=2
+cutover_ready=false
+cloud_guard=PASS
+004i_adapter_regression=PASS
+renewal_reminder_business_regression=PASS
+
+[Git adapter batch]
+bca3937 Add PostgreSQL renewal notification adapter
+
+[CloudBase deployment]
+Version 021 deployed successfully.
+
+[CloudBase 021 adapter rollback sandbox]
+{"batch":"004j-adapter-cloud","status":"PASS","processPid":42,"checkCount":8,"cleanup":"PASS"}
