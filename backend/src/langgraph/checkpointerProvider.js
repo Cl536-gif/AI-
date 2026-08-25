@@ -6,6 +6,7 @@ const {
 
 const MEMORY_CHECKPOINTER = 'memory';
 const POSTGRES_CHECKPOINTER = 'postgres';
+const POSTGRES_CHECKPOINTER_CONFIRMATION = 'postgres-shared-checkpointer';
 
 function createCheckpointerError(code, message) {
   const error = new Error(message);
@@ -30,9 +31,27 @@ function resolveLangGraphCheckpointerPolicy({ env = process.env } = {}) {
   }
 
   if (backend === POSTGRES_CHECKPOINTER) {
+    const confirmation = String(env.LANGGRAPH_CHECKPOINTER_CONFIRM || '').trim();
+    if (confirmation !== POSTGRES_CHECKPOINTER_CONFIRMATION) {
+      throw createCheckpointerError(
+        'LANGGRAPH_POSTGRES_CHECKPOINTER_CONFIRMATION_REQUIRED',
+        '共享PostgreSQL checkpointer需要独立显式确认'
+      );
+    }
+    const {
+      POSTGRES_CHECKPOINTER_VERSION,
+    } = require('./postgresCheckpointer');
+    if (String(env.LANGGRAPH_CHECKPOINTER_SCHEMA_VERSION || '').trim()
+        !== POSTGRES_CHECKPOINTER_VERSION) {
+      throw createCheckpointerError(
+        'LANGGRAPH_POSTGRES_CHECKPOINTER_SCHEMA_VERSION_MISMATCH',
+        '共享PostgreSQL checkpointer schema版本未确认或不匹配'
+      );
+    }
     return Object.freeze({
       backend,
       userStoreAdapter,
+      schemaVersion: POSTGRES_CHECKPOINTER_VERSION,
       shared: true,
       productionReady: false,
     });
@@ -69,7 +88,12 @@ function resolveLangGraphCheckpointerPolicy({ env = process.env } = {}) {
 function createLangGraphCheckpointer({
   env = process.env,
   createMemorySaver = () => new MemorySaver(),
-  createPostgresSaver,
+  createPostgresSaver = () => {
+    const {
+      createPostgresLangGraphCheckpointer,
+    } = require('./postgresCheckpointer');
+    return createPostgresLangGraphCheckpointer();
+  },
 } = {}) {
   const policy = resolveLangGraphCheckpointerPolicy({ env });
 
@@ -80,12 +104,8 @@ function createLangGraphCheckpointer({
     });
   }
 
-  if (typeof createPostgresSaver !== 'function') {
-    throw createCheckpointerError(
-      'LANGGRAPH_POSTGRES_CHECKPOINTER_NOT_IMPLEMENTED',
-      'PostgreSQL LangGraph checkpointer尚未安装和初始化，拒绝启动'
-    );
-  }
+  const { assertThreadScopeConfig } = require('./threadScope');
+  assertThreadScopeConfig(env);
 
   return Object.freeze({
     checkpointer: createPostgresSaver(),
@@ -96,6 +116,7 @@ function createLangGraphCheckpointer({
 module.exports = {
   MEMORY_CHECKPOINTER,
   POSTGRES_CHECKPOINTER,
+  POSTGRES_CHECKPOINTER_CONFIRMATION,
   resolveLangGraphCheckpointerPolicy,
   createLangGraphCheckpointer,
 };

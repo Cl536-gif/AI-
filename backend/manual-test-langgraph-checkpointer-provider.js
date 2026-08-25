@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   MEMORY_CHECKPOINTER,
   POSTGRES_CHECKPOINTER,
+  POSTGRES_CHECKPOINTER_CONFIRMATION,
   resolveLangGraphCheckpointerPolicy,
   createLangGraphCheckpointer,
 } = require('./src/langgraph/checkpointerProvider');
@@ -54,15 +55,53 @@ expectCode(
 );
 
 const futurePostgresPolicy = resolveLangGraphCheckpointerPolicy({
-  env: { LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER },
+  env: {
+    LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER,
+    LANGGRAPH_CHECKPOINTER_CONFIRM: POSTGRES_CHECKPOINTER_CONFIRMATION,
+    LANGGRAPH_CHECKPOINTER_SCHEMA_VERSION: '1.0.4',
+  },
 });
 assert.strictEqual(futurePostgresPolicy.shared, true);
 assert.strictEqual(futurePostgresPolicy.productionReady, false);
+const postgresMarker = {};
+const futurePostgres = createLangGraphCheckpointer({
+  env: {
+    LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER,
+    LANGGRAPH_CHECKPOINTER_CONFIRM: POSTGRES_CHECKPOINTER_CONFIRMATION,
+    LANGGRAPH_CHECKPOINTER_SCHEMA_VERSION: '1.0.4',
+    LANGGRAPH_THREAD_HMAC_SECRET: 'a'.repeat(32),
+  },
+  createPostgresSaver: () => postgresMarker,
+});
+assert.strictEqual(futurePostgres.checkpointer, postgresMarker);
+assert.strictEqual(futurePostgres.policy.shared, true);
 expectCode(
-  () => createLangGraphCheckpointer({
+  () => resolveLangGraphCheckpointerPolicy({
     env: { LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER },
   }),
-  'LANGGRAPH_POSTGRES_CHECKPOINTER_NOT_IMPLEMENTED'
+  'LANGGRAPH_POSTGRES_CHECKPOINTER_CONFIRMATION_REQUIRED'
+);
+expectCode(
+  () => resolveLangGraphCheckpointerPolicy({
+    env: {
+      LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER,
+      LANGGRAPH_CHECKPOINTER_CONFIRM: POSTGRES_CHECKPOINTER_CONFIRMATION,
+      LANGGRAPH_CHECKPOINTER_SCHEMA_VERSION: 'wrong',
+    },
+  }),
+  'LANGGRAPH_POSTGRES_CHECKPOINTER_SCHEMA_VERSION_MISMATCH'
+);
+expectCode(
+  () => createLangGraphCheckpointer({
+    env: {
+      LANGGRAPH_CHECKPOINTER_BACKEND: POSTGRES_CHECKPOINTER,
+      LANGGRAPH_CHECKPOINTER_CONFIRM: POSTGRES_CHECKPOINTER_CONFIRMATION,
+      LANGGRAPH_CHECKPOINTER_SCHEMA_VERSION: '1.0.4',
+      LANGGRAPH_THREAD_HMAC_SECRET: 'short',
+    },
+    createPostgresSaver: () => postgresMarker,
+  }),
+  'LANGGRAPH_THREAD_SCOPE_SECRET_INVALID'
 );
 
 const marker = {};
@@ -80,5 +119,6 @@ console.log(JSON.stringify({
   singleInstanceCanaryMemoryAllowed: true,
   unsafeCanaryRejected: true,
   fullPostgresCannotUseMemory: true,
-  postgresBackendFailsClosedUntilImplemented: true,
+  postgresBackendRequiresConfirmationAndSchemaVersion: true,
+  postgresBackendRequiresThreadScopeSecret: true,
 }));

@@ -16,6 +16,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { workflow } = require('../langgraph/graph');
 const { createLangGraphCheckpointer } = require('../langgraph/checkpointerProvider');
+const { resolveInternalThreadId } = require('../langgraph/threadScope');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
 const userService = require('../services/userService');
@@ -37,7 +38,7 @@ const MAX_MESSAGE_LENGTH = 2000;
 const GLOBAL_PRIVACY_FOLLOW_UP =
   '以上是最重要的几条。还有隐私问题可以继续问我；如果没有，直接接着回答刚才的问题就好。';
 
-const { checkpointer } = createLangGraphCheckpointer();
+const { checkpointer, policy: checkpointerPolicy } = createLangGraphCheckpointer();
 const graphWithCheckpointer = workflow.compile({ checkpointer });
 
 function getMessageRole(message) {
@@ -129,7 +130,6 @@ router.post('/', async (req, res, next) => {
   }
 
   const resolvedThreadId = threadId && threadId.trim() ? threadId.trim() : crypto.randomUUID();
-  const config = { configurable: { thread_id: resolvedThreadId } };
 
   try {
     let graphMessage = message.trim();
@@ -177,6 +177,12 @@ router.post('/', async (req, res, next) => {
     // userId。当前 deviceId 只映射为内部 anon:* 身份；档案与事件写入必须
     // 经过 graphPersistenceCoordinator 的权限边界。
     const anonymousUserId = deviceId ? await resolveAnonymousUser(deviceId) : null;
+    const internalThreadId = resolveInternalThreadId({
+      publicThreadId: resolvedThreadId,
+      userId: anonymousUserId,
+      checkpointerPolicy,
+    });
+    const config = { configurable: { thread_id: internalThreadId } };
     const explicitTimezone = detectExplicitTimezone(graphMessage);
     if (anonymousUserId && explicitTimezone) {
       await userService.updateTimezone(anonymousUserId, explicitTimezone);
