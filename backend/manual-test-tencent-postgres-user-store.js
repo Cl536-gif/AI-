@@ -524,6 +524,17 @@ async function main() {
     /建议元数据格式不正确/
   );
 
+  const snapshot = await store.getUserDataSnapshot('acct:user-1');
+  assert.strictEqual(snapshot.userId, 'acct:user-1');
+  assert.strictEqual(snapshot.profile.profileVersion, 3);
+  assert.strictEqual(snapshot.profileRevisions.length, 2);
+  assert.strictEqual(snapshot.serviceStatus.status, 'trial_active');
+  assert.strictEqual(snapshot.adviceHistory.length, 2);
+  assert.strictEqual(snapshot.events.length, 2);
+  assert.strictEqual(snapshot.energyCalculations.length, 2);
+  assert.strictEqual(snapshot.plans.length, 0);
+  assert.strictEqual(snapshot.serviceTransitions.length, 2);
+
   const unavailableMethods = USER_STORE_METHODS
     .filter((methodName) => !DATABASE_READY_METHODS.includes(methodName));
   for (const methodName of unavailableMethods) {
@@ -533,7 +544,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 4);
+  assert.strictEqual(unavailableMethods.length, 3);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -546,10 +557,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004k-adapter',
+    batch: '004l-adapter',
     status: 'PASS',
-    implementedMethodCount: 34,
-    unavailableMethodCount: 4,
+    implementedMethodCount: 35,
+    unavailableMethodCount: 3,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));

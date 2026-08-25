@@ -30,6 +30,7 @@ const DATABASE_READY_METHODS = Object.freeze([
   'markNotificationSent',
   'recordAdvice',
   'listAdviceHistory',
+  'getUserDataSnapshot',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -38,13 +39,12 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'listUserSummaries',
-  'getUserDataSnapshot',
 ]);
 
 const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([
   'getUserMerge',
   'getMergeReview',
+  'listUserSummaries',
 ]);
 
 const METHOD_CAPABILITIES = Object.freeze(Object.fromEntries([

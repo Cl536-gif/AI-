@@ -828,6 +828,21 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function getUserDataSnapshot(userId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    return {
+      userId: normalizedUserId,
+      profile: await getProfile(normalizedUserId),
+      profileRevisions: await listProfileRevisions(normalizedUserId, { limit: 100 }),
+      serviceStatus: await getServiceStatus(normalizedUserId),
+      adviceHistory: await listAdviceHistory(normalizedUserId, { limit: 100 }),
+      events: await listEvents(normalizedUserId, { limit: 200 }),
+      energyCalculations: await listEnergyCalculations(normalizedUserId, { limit: 100 }),
+      plans: await listPlans(normalizedUserId, { limit: 100 }),
+      serviceTransitions: await listServiceTransitions(normalizedUserId, { limit: 100 }),
+    };
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -942,6 +957,7 @@ function createTencentPostgresUserStore({
     markNotificationSent,
     recordAdvice,
     listAdviceHistory,
+    getUserDataSnapshot,
     appendEvent,
     getEvent,
     listEvents,
