@@ -4,6 +4,8 @@ const DATABASE_READY_METHODS = Object.freeze([
   'ensureUser',
   'resolveAnonymousIdentity',
   'mergeAnonymousIntoAccount',
+  'getUserMerge',
+  'getMergeReview',
   'releaseMergedSensitiveEvents',
   'getProfile',
   'updateProfile',
@@ -41,11 +43,7 @@ const DATABASE_READY_METHODS = Object.freeze([
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
 ]);
 
-const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([
-  'getUserMerge',
-  'getMergeReview',
-  'listUserSummaries',
-]);
+const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([]);
 
 const METHOD_CAPABILITIES = Object.freeze(Object.fromEntries([
   ...DATABASE_READY_METHODS.map((methodName) => [methodName, 'database_ready']),

@@ -162,6 +162,49 @@ function mapAdvice(userId, value) {
   };
 }
 
+function mapUserMerge(value) {
+  if (!value) return null;
+  return {
+    mergeId: value.mergeId ?? value.merge_id,
+    sourceUserId: value.sourceUserId ?? value.source_user_id,
+    targetUserId: value.targetUserId ?? value.target_user_id,
+    status: value.status,
+    mergedAt: normalizeTimestamp(value.mergedAt ?? value.merged_at),
+  };
+}
+
+function mapMergeReview(value) {
+  if (!value) return null;
+  return {
+    mergeId: value.mergeId ?? value.merge_id,
+    conflicts: (value.conflicts || []).map((conflict) => ({
+      conflictId: conflict.conflictId ?? conflict.conflict_id,
+      fieldPath: conflict.fieldPath ?? conflict.field_path,
+      accountValue: conflict.accountValue ?? conflict.account_value,
+      guestValue: conflict.guestValue ?? conflict.guest_value,
+      accountUpdatedAt: normalizeTimestamp(
+        conflict.accountUpdatedAt ?? conflict.account_updated_at
+      ),
+      guestUpdatedAt: normalizeTimestamp(conflict.guestUpdatedAt ?? conflict.guest_updated_at),
+      accountStaleOver30Days: Boolean(
+        conflict.accountStaleOver30Days ?? conflict.account_stale_over_30_days
+      ),
+      resolutionStatus: conflict.resolutionStatus ?? conflict.resolution_status,
+      createdAt: normalizeTimestamp(conflict.createdAt ?? conflict.created_at),
+    })),
+    eventAudit: (value.eventAudit ?? value.event_audit ?? []).map((event) => ({
+      sourceEventId: event.sourceEventId ?? event.source_event_id,
+      targetEventId: event.targetEventId ?? event.target_event_id,
+      action: event.action,
+      eventHash: event.eventHash ?? event.event_hash,
+      createdAt: normalizeTimestamp(event.createdAt ?? event.created_at),
+    })),
+    pendingConflictCount: Number(
+      value.pendingConflictCount ?? value.pending_conflict_count ?? 0
+    ),
+  };
+}
+
 function normalizeQueueTimestamp(value, label) {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) throw new Error(`${label}格式不正确`);
@@ -313,7 +356,35 @@ function createTencentPostgresUserStore({
         'SELECT app.merge_current_account_from_anonymous($1) AS result',
         [source]
       );
-      return firstRpcResult(result);
+      return mapUserMerge(firstRpcResult(result));
+    });
+  }
+
+  async function getUserMerge(userId, sourceUserId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedSourceUserId = UserIdSchema.parse(sourceUserId);
+    if (!normalizedUserId.startsWith('acct:')) throw new Error('只有正式账号可以读取合并结果');
+    if (!normalizedSourceUserId.startsWith('anon:')) throw new Error('合并源必须是匿名游客身份');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.get_current_user_merge($1) AS result',
+        [normalizedSourceUserId]
+      );
+      return mapUserMerge(firstRpcResult(result));
+    });
+  }
+
+  async function getMergeReview(userId, mergeId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedMergeId = String(mergeId || '').trim();
+    if (!normalizedUserId.startsWith('acct:')) throw new Error('只有正式账号可以读取合并审核');
+    if (!normalizedMergeId) throw new Error('mergeId不能为空');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.get_current_merge_review($1::uuid) AS result',
+        [normalizedMergeId]
+      );
+      return mapMergeReview(firstRpcResult(result));
     });
   }
 
@@ -931,6 +1002,8 @@ function createTencentPostgresUserStore({
     ensureUser,
     resolveAnonymousIdentity,
     mergeAnonymousIntoAccount,
+    getUserMerge,
+    getMergeReview,
     releaseMergedSensitiveEvents,
     getProfile,
     updateProfile,

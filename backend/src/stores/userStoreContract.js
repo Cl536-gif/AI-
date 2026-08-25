@@ -40,7 +40,6 @@ const USER_STORE_METHODS = Object.freeze([
   'listEvents',
   'recordAdvice',
   'listAdviceHistory',
-  'listUserSummaries',
   'getUserDataSnapshot',
   'getUserSettings',
   'updateUserTimezone',
@@ -48,11 +47,26 @@ const USER_STORE_METHODS = Object.freeze([
   'getLatestConsent',
 ]);
 
-function getMissingUserStoreMethods(store) {
+// Cross-user directory reads are deliberately kept out of the production
+// UserStore port. They require an explicit administrative authentication and
+// audit boundary before a non-SQLite adapter may implement them.
+const USER_STORE_ADMIN_METHODS = Object.freeze([
+  'listUserSummaries',
+]);
+
+function getMissingMethods(store, methodNames) {
   if (!store || (typeof store !== 'object' && typeof store !== 'function')) {
-    return [...USER_STORE_METHODS];
+    return [...methodNames];
   }
-  return USER_STORE_METHODS.filter((methodName) => typeof store[methodName] !== 'function');
+  return methodNames.filter((methodName) => typeof store[methodName] !== 'function');
+}
+
+function getMissingUserStoreMethods(store) {
+  return getMissingMethods(store, USER_STORE_METHODS);
+}
+
+function getMissingUserStoreAdminMethods(store) {
+  return getMissingMethods(store, USER_STORE_ADMIN_METHODS);
 }
 
 function assertUserStore(store, { adapterName = 'UserStore' } = {}) {
@@ -63,8 +77,19 @@ function assertUserStore(store, { adapterName = 'UserStore' } = {}) {
   return store;
 }
 
+function assertUserStoreAdmin(store, { adapterName = 'UserStoreAdmin' } = {}) {
+  const missingMethods = getMissingUserStoreAdminMethods(store);
+  if (missingMethods.length > 0) {
+    throw new TypeError(`${adapterName} 缺少管理端 UserStore 方法：${missingMethods.join(', ')}`);
+  }
+  return store;
+}
+
 module.exports = {
   USER_STORE_METHODS,
+  USER_STORE_ADMIN_METHODS,
   getMissingUserStoreMethods,
+  getMissingUserStoreAdminMethods,
   assertUserStore,
+  assertUserStoreAdmin,
 };

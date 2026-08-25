@@ -1,10 +1,10 @@
 # 004 腾讯云 PostgreSQL UserStore 接入方案（审核稿）
 
-> 状态：截至004k已有34/38方法完成数据库与云端验收；004l将本人数据快照重分类为无新增结构的安全组合读取，并将跨用户摘要转入契约调整。尚未接入生产适配器选择、尚未切换业务流量。
+> 状态：004l已完成本人数据快照云端验收。后续契约复审将跨用户`listUserSummaries`拆出生产UserStore，并为两个合并读取显式加入当前目标账号。生产契约现为37方法，尚未切换业务流量。
 
 ## 1. 目标
 
-在003连接池、事务边界和真实云端隔离验收通过的基础上，实现独立的 `TencentPostgresUserStore`，最终替代当前 SQLite UserStore。切换前必须逐项覆盖现有38方法契约，并保持数据库RLS、RPC原子性和敏感授权边界。
+在003连接池、事务边界和真实云端隔离验收通过的基础上，实现独立的 `TencentPostgresUserStore`，最终替代当前 SQLite UserStore。切换前必须逐项覆盖生产UserStore的37方法契约，并保持数据库RLS、RPC原子性和敏感授权边界；管理型跨用户端口单独管理。
 
 004不复用旧的 `SupabaseUserStore` 统一分发RPC草稿。腾讯云适配器直接使用003的 `withUserTransaction()`，只调用细粒度参数化SQL和已部署的细粒度RPC。
 
@@ -45,14 +45,15 @@
 | 方案修订命令 | `getPlanRevisionCommand`, `recordPlanRevisionCommand` | 命令幂等表与RLS |
 | 提醒 | `enqueueDueRenewalReminders`, `listPendingNotifications`, `markNotificationSent` | 通知表、领取/发送并发语义 |
 | 建议历史 | `recordAdvice`, `listAdviceHistory` | 建议历史表、幂等约束与RLS |
-| 聚合读取 | `listUserSummaries`, `getUserDataSnapshot` | 依赖上述表完成；管理型跨用户读取还需单独角色边界 |
+| 本人聚合读取 | `getUserDataSnapshot` | 顺序组合已验收的8类本人读取 |
+| 管理型跨用户读取 | `listUserSummaries` | 不属于生产UserStore；需单独管理员身份、授权与审计端口 |
 
-### 2.3 需要先修改接口契约（2项）
+### 2.3 身份合并读取契约（已调整）
 
 | UserStore方法 | 原因 |
 |---|---|
-| `getUserMerge(sourceUserId)` | 数据库RPC按“当前目标账号”授权，但接口没有目标账号/当前账号参数，适配器无法建立正确RLS上下文 |
-| `getMergeReview(mergeId)` | 数据库RPC同样要求当前目标账号，接口只有 `mergeId`，不能安全推断用户身份 |
+| `getUserMerge(userId, sourceUserId)` | 显式传入已认证目标账号，PostgreSQL事务以该账号建立RLS上下文，RPC再校验归属 |
+| `getMergeReview(userId, mergeId)` | 显式传入已认证目标账号，不根据`mergeId`反查或推断身份 |
 
 不得为了保持旧签名而使用管理员连接绕过RLS。应先把当前账号身份显式加入业务服务和UserStore契约，再调整SQLite实现与测试。
 
@@ -60,14 +61,14 @@
 
 - `getUserDataSnapshot(userId)`只组合已经验收的本人档案、修订、服务、建议、事件、能量、计划和服务历史，不需要新增表或跨用户权限；适配器按顺序执行8个本人读取，避免测试单连接池耗尽。
 - `listUserSummaries({ limit })`属于跨用户管理读取，现有签名没有管理员身份、授权上下文或审计信息；不得给普通`diet_app`增加全局汇总函数。
-- 因此能力清单调整为：35项`database_ready`、0项`schema_required`、3项`contract_change_required`。
-- `listUserSummaries`必须与两个身份合并读取一起先修改契约，或明确移出生产UserStore端口；在此之前保持固定不可用错误。
+- 因此生产能力清单调整为：37项`database_ready`、0项`schema_required`、0项`contract_change_required`。
+- `listUserSummaries`移出生产UserStore端口，放入独立的管理方法清单；当前仅非生产SQLite调试路由使用，TencentPostgres适配器不实现该跨用户查询。
 
 ## 3. 分批顺序
 
 ### 004a：冻结能力清单与切换门槛
 
-- 38个方法必须全部分类，不允许新增方法后静默遗漏。
+- 37个生产方法必须全部分类；1个管理方法单独列表，不允许新增方法后静默遗漏。
 - `isTencentPostgresCutoverReady()` 必须保持 `false`。
 - `USER_STORE_ADAPTER` 继续为 `sqlite`。
 
@@ -84,7 +85,7 @@
 - 每组迁移包含：表、约束、索引、RLS、最小权限、原子RPC和回滚验证。
 - 通知领取必须设计并发锁定，不能用“先查询再更新”的非原子流程。
 
-### 004d：完整38方法契约与云端验证
+### 004d：完整生产37方法契约与云端验证
 
 - SQLite与PostgreSQL对同一契约场景返回等价领域对象。
 - 两用户隔离、经期撤回/恢复、幂等、乐观并发、故障回滚和连接耗尽全部通过。
@@ -111,7 +112,7 @@
 
 以下条件全部满足前，`USER_STORE_ADAPTER` 必须保持 `sqlite`：
 
-- 38/38方法标记为 `implemented_and_verified`。
+- 37/37生产方法均具备实现且所需云端证据已验证。
 - 本地契约、数据库迁移、真实云端和LangGraph端到端回归全部通过。
 - 业务层异步调用审计完成。
 - 故障回滚、并发和数据清理证据已归档。

@@ -62,7 +62,34 @@ async function main() {
       return { rows: [{ result: { userId: 'anon:resolved', existing: false } }] };
     }
     if (text.includes('merge_current_account_from_anonymous')) {
-      return { rows: [{ result: { mergeId: '00000000-0000-4000-8000-000000000001', sourceUserId: values[0], targetUserId: 'acct:account-1', status: 'completed' } }] };
+      return { rows: [{ result: { mergeId: '00000000-0000-4000-8000-000000000001', sourceUserId: values[0], targetUserId: 'acct:account-1', status: 'completed', mergedAt: '2026-08-24T04:00:00.000+00:00' } }] };
+    }
+    if (text.includes('get_current_user_merge')) {
+      return { rows: [{ result: { mergeId: '00000000-0000-4000-8000-000000000001', sourceUserId: values[0], targetUserId: 'acct:account-1', status: 'completed', mergedAt: '2026-08-24T04:00:00.000+00:00' } }] };
+    }
+    if (text.includes('get_current_merge_review')) {
+      return { rows: [{ result: {
+        mergeId: values[0],
+        conflicts: [{
+          conflictId: '00000000-0000-4000-8000-000000000002',
+          fieldPath: 'body.currentWeightKg',
+          accountValue: 70,
+          guestValue: 65,
+          accountUpdatedAt: '2026-08-24T03:00:00.000+00:00',
+          guestUpdatedAt: '2026-08-24T03:30:00.000+00:00',
+          accountStaleOver30Days: false,
+          resolutionStatus: 'pending',
+          createdAt: '2026-08-24T04:00:00.000+00:00',
+        }],
+        eventAudit: [{
+          sourceEventId: 'source-event',
+          targetEventId: 'target-event',
+          action: 'migrated',
+          eventHash: 'a'.repeat(64),
+          createdAt: '2026-08-24T04:00:01.000+00:00',
+        }],
+        pendingConflictCount: 1,
+      } }] };
     }
     if (text.includes('release_current_merged_sensitive_events')) {
       return { rows: [{ result: 2 }] };
@@ -317,6 +344,16 @@ async function main() {
 
   const merge = await store.mergeAnonymousIntoAccount('anon:guest-1', 'account-1');
   assert.strictEqual(merge.targetUserId, 'acct:account-1');
+  assert.strictEqual(merge.mergedAt, '2026-08-24T04:00:00.000Z');
+  const fetchedMerge = await store.getUserMerge('acct:account-1', 'anon:guest-1');
+  assert.strictEqual(fetchedMerge.mergeId, merge.mergeId);
+  const mergeReview = await store.getMergeReview(
+    'acct:account-1',
+    '00000000-0000-4000-8000-000000000001'
+  );
+  assert.strictEqual(mergeReview.pendingConflictCount, 1);
+  assert.strictEqual(mergeReview.conflicts[0].createdAt, '2026-08-24T04:00:00.000Z');
+  assert.strictEqual(mergeReview.eventAudit[0].createdAt, '2026-08-24T04:00:01.000Z');
   assert.strictEqual(
     await store.releaseMergedSensitiveEvents(
       'acct:account-1',
@@ -544,7 +581,8 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 3);
+  assert.strictEqual(unavailableMethods.length, 0);
+  assert.strictEqual(store.listUserSummaries, undefined);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -557,10 +595,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004l-adapter',
+    batch: '004m-adapter',
     status: 'PASS',
-    implementedMethodCount: 35,
-    unavailableMethodCount: 3,
+    implementedMethodCount: 37,
+    unavailableMethodCount: 0,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));
