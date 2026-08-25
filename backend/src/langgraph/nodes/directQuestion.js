@@ -18,6 +18,8 @@ const structuredDetector = classifierModel.withStructuredOutput(DirectQuestionSc
 // “我该怎么吃”这类没有问号的自然询问也必须覆盖。
 const QUESTION_CANDIDATE_REGEX = /[?？]|(?:怎么|如何|为什么|什么(?:意思|原因|时候|食物|方案)?|能不能|可不可以|要不要|是不是|有没有|多少|哪里|哪种|哪一个|该不该|我该|怎么办)|(?:吗|嘛|么|呢)[。！!～~]*$/;
 const HIGH_CONFIDENCE_QUESTION_REGEX = /(?:我(?:现在|今天|中午|晚上)?该怎么|我该|怎么吃|怎么办|如何吃|为什么|什么意思|你能不能|你能否|能不能帮|可不可以帮|需要付费吗|要收费吗)/;
+const EMPTY_PROFILE_GENERIC_MEAL_QUESTION_REGEX =
+  /^(?:我)?(?:今天|现在)?(?:这顿|早上|中午|晚上|早餐|午餐|晚餐)?(?:该|应该|要)?(?:怎么吃|吃什么)[？?。！!～~]*$/;
 
 function isQuestionCandidate(userText) {
   const text = String(userText || '').trim();
@@ -67,6 +69,13 @@ async function answerDirectQuestion(state, { chatModel = model } = {}) {
   if (fixedProductAnswer) {
     return {
       messages: [{ role: 'ai', content: fixedProductAnswer }],
+      directQuestion: null,
+      directQuestionAnsweredThisTurn: true,
+    };
+  }
+  if (shouldUseEmptyProfileMealAnswer(questionText, state.longTermContext)) {
+    return {
+      messages: [{ role: 'ai', content: buildEmptyProfileDirectAnswer(questionText) }],
       directQuestion: null,
       directQuestionAnsweredThisTurn: true,
     };
@@ -136,6 +145,18 @@ async function answerDirectQuestion(state, { chatModel = model } = {}) {
     directQuestion: null,
     directQuestionAnsweredThisTurn: true,
   };
+}
+
+function shouldUseEmptyProfileMealAnswer(questionText, longTermContext = null) {
+  const hasKnownProfile = Boolean(longTermContext?.profile?.profile);
+  const hasKnownHistory = Boolean(
+    (longTermContext?.recentAdvice || []).length ||
+    longTermContext?.activePlan ||
+    longTermContext?.pausedPlan
+  );
+  const normalizedQuestion = String(questionText || '').replace(/\s+/g, '').trim();
+  return !hasKnownProfile && !hasKnownHistory &&
+    EMPTY_PROFILE_GENERIC_MEAL_QUESTION_REGEX.test(normalizedQuestion);
 }
 
 function stripRepeatedWelcome(value, shouldStrip) {
@@ -218,9 +239,11 @@ module.exports = {
   DirectQuestionSchema,
   QUESTION_CANDIDATE_REGEX,
   HIGH_CONFIDENCE_QUESTION_REGEX,
+  EMPTY_PROFILE_GENERIC_MEAL_QUESTION_REGEX,
   isQuestionCandidate,
   detectDirectQuestion,
   answerDirectQuestion,
+  shouldUseEmptyProfileMealAnswer,
   detectDirectAnswerIssues,
   buildEmptyProfileDirectAnswer,
   stripTrailingCollectionQuestion,

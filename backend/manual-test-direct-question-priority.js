@@ -5,6 +5,7 @@ const {
   answerDirectQuestion,
   detectDirectAnswerIssues,
   buildEmptyProfileDirectAnswer,
+  shouldUseEmptyProfileMealAnswer,
   stripTrailingCollectionQuestion,
   stripRepeatedWelcome,
 } = require('./src/langgraph/nodes/directQuestion');
@@ -114,7 +115,7 @@ async function main() {
   let emptyContextAttempts = 0;
   const emptyContextAnswer = await answerDirectQuestion(
     {
-      directQuestion: '今天午餐怎么吃？',
+      directQuestion: '如果我今天吃食堂，午餐怎么搭配？',
       longTermContext: { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] },
     },
     {
@@ -131,8 +132,8 @@ async function main() {
   assert.equal(emptyContextAttempts, 2, '空档案伪记忆没有触发重试');
   assert.doesNotMatch(emptyContextAnswer.messages[0].content, /老底子|之前食堂/);
 
-  let persistentHallucinationAttempts = 0;
-  const deterministicFallback = await answerDirectQuestion(
+  let genericMealModelCalls = 0;
+  const genericMealAnswer = await answerDirectQuestion(
     {
       directQuestion: '今天午餐怎么吃？',
       longTermContext: { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] },
@@ -140,8 +141,42 @@ async function main() {
     {
       chatModel: {
         async invoke() {
+          genericMealModelCalls += 1;
+          return { content: '如果食堂没有西红柿炒蛋，可以换成蒸蛋。' };
+        },
+      },
+    }
+  );
+  assert.equal(genericMealModelCalls, 0, '空档案通用餐食问题不应再调用模型猜测场景');
+  assert.equal(genericMealAnswer.messages[0].content, buildEmptyProfileDirectAnswer('今天午餐怎么吃？'));
+  assert.match(genericMealAnswer.messages[0].content, /不依赖个人档案的通用搭配/);
+  assert.doesNotMatch(genericMealAnswer.messages[0].content, /如果食堂没有|西红柿炒蛋/);
+  assert.equal(
+    shouldUseEmptyProfileMealAnswer(
+      '今天午餐怎么吃？',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ),
+    true
+  );
+  assert.equal(
+    shouldUseEmptyProfileMealAnswer(
+      '如果我今天吃食堂，午餐怎么搭配？',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ),
+    false
+  );
+
+  let persistentHallucinationAttempts = 0;
+  const deterministicFallback = await answerDirectQuestion(
+    {
+      directQuestion: '如果我今天吃食堂，午餐怎么搭配？',
+      longTermContext: { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] },
+    },
+    {
+      chatModel: {
+        async invoke() {
           persistentHallucinationAttempts += 1;
-          return { content: '今天午餐，咱们先按“食堂自己打饭”来搭配哈。' };
+          return { content: '按你一直重口味的老底子来搭配哈。' };
         },
       },
     }
@@ -149,7 +184,7 @@ async function main() {
   assert.equal(persistentHallucinationAttempts, 3, '持续伪记忆时应耗尽三次模型重试');
   assert.equal(
     deterministicFallback.messages[0].content,
-    buildEmptyProfileDirectAnswer('今天午餐怎么吃？')
+    buildEmptyProfileDirectAnswer('如果我今天吃食堂，午餐怎么搭配？')
   );
   assert.match(deterministicFallback.messages[0].content, /通用搭配/);
   assert.doesNotMatch(deterministicFallback.messages[0].content, /食堂自己打饭|老底子/);
