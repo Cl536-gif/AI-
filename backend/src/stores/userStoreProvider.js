@@ -26,6 +26,10 @@ function configureUserStoreFromEnv({ env = process.env } = {}) {
     );
   }
   if (adapter === 'tencent-postgres' || adapter === 'tencent_postgres') {
+    const {
+      assertTencentPostgresCutoverAllowed,
+    } = require('./tencentPostgresCutoverGate');
+    assertTencentPostgresCutoverAllowed({ env });
     const { createTencentPostgresUserStore } = require('./tencentPostgresUserStore');
     return setUserStore(createTencentPostgresUserStore(), {
       adapterName: 'TencentPostgresUserStore',
