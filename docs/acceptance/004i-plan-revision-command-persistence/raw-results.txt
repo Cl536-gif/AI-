@@ -1,0 +1,40 @@
+004i plan revision command persistence cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[DMS preflight readonly]
+"PASS","true","true","true","true","true","true","0","0"
+
+[DMS migration]
+Plan revision command table and controlled write RPC migration completed successfully.
+
+[DMS repeated migration attempt]
+ERROR: relation "plan_revision_commands" already exists
+The following readonly postflight proved that the first migration had completed fully.
+
+[DMS postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","true","true","true","0","0"
+
+[DMS rollback functional sandbox - first attempt]
+ERROR: 当前服务状态不能启用长期计划
+The existing plan activation guard rejected the test setup. The transaction had no COMMIT.
+
+[DMS rollback functional sandbox - corrected retry]
+draft_command_recorded=PASS
+draft_retry_idempotent=PASS
+command_advanced_to_delivered=PASS
+plan_rebinding_rejected=PASS
+cross_user_collision_rejected_and_isolated=PASS
+cleanup="PASS","0","0","0"
+
+[Local adapter verification]
+adapter_methods=2 PASS
+contract_methods=38
+database_ready_methods=29
+schema_required_methods=7
+contract_change_required_methods=2
+cutover_ready=false
+cloud_guard=PASS
+graph_plan_revision_idempotency_regression=PASS
+
+[CloudBase 020 adapter rollback sandbox]
+{"batch":"004i-adapter-cloud","status":"PASS","processPid":35,"checkCount":8,"cleanup":"PASS"}
