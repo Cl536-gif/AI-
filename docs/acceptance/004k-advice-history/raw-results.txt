@@ -1,0 +1,41 @@
+004k advice history cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git database batch]
+6dd1b71 Add PostgreSQL advice history persistence
+
+[DMS preflight readonly]
+"PASS","true","true","true","true","true","0"
+
+[DMS migration]
+Advice history table, user-time index, own-row SELECT policy and controlled idempotent write RPC completed successfully.
+
+[DMS postflight readonly]
+"PASS","true","true","true","true","true","true","true","true","true","true","true","true","true","true","true","0","0"
+
+[DMS rollback functional sandbox]
+advice_recorded_idempotently=PASS
+advice_history_order_and_snapshot_verified=PASS
+invalid_advice_rejected_without_mutation=PASS
+cross_user_isolation_and_defaults_verified=PASS
+cleanup="PASS","0","0"
+
+[Local adapter verification]
+adapter_methods=2 PASS
+contract_methods=38
+database_ready_methods=34
+schema_required_methods=2
+contract_change_required_methods=2
+cutover_ready=false
+cloud_guard=PASS
+full_adapter_regression=PASS
+graph_persistence_coordinator_regression=PASS
+
+[Git adapter batch]
+de8d783 Implement PostgreSQL advice history adapter
+
+[CloudBase deployment]
+Version 022 deployed successfully.
+
+[CloudBase 022 adapter rollback sandbox]
+{"batch":"004k-adapter-cloud","status":"PASS","processPid":35,"checkCount":8,"cleanup":"PASS"}
