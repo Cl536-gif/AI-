@@ -1,0 +1,8 @@
+evidence_id,stage,environment,result,source
+005e-01,provider and failure-closed gates,Local Node.js,PASS,raw-results.txt
+005e-02,official saver adapter and shared pool,Local Node.js,PASS,raw-results.txt
+005e-03,cloud network and topology guard,CloudBase 046,PASS,raw-results.txt
+005e-04,independent seed process,CloudBase 046,PASS COUNT 2 PERSISTED,raw-results.txt
+005e-05,repeat seed protection,CloudBase 046,EXPECTED FAILURE CLOSED,raw-results.txt
+005e-06,independent resume process,CloudBase 046,PASS COUNT 4 ISOLATED,raw-results.txt
+005e-07,precise cleanup,CloudBase 046,PASS ZERO RESIDUE,raw-results.txt

@@ -1,0 +1,62 @@
+005e shared LangGraph PostgreSQL checkpointer single-instance acceptance
+Date: 2026-08-25 Asia/Shanghai
+
+[Git implementation batches]
+c948a28 Gate LangGraph checkpointer selection
+4c6ec5a Prepare shared LangGraph PostgreSQL checkpointer
+7fabc43 Add PostgreSQL LangGraph checkpointer dependency
+0a9d783 Add shared checkpointer cloud canary
+branch_remote_sync=PASS
+
+[Local regression]
+checkpointer_provider_gate=PASS
+official_postgres_saver_adapter=PASS
+cloud_network_guard=PASS
+full_cutover_readiness_audit=PASS
+direct_question_regression=PASS
+graph_persistence_coordinator=PASS
+sqlite_async_http_boundary=PASS
+
+[CloudBase 046 guard]
+status=PASS
+user_store_remains_sqlite=true
+private_network_required=true
+thread_scope_secret_required=true
+network_used=false
+
+[CloudBase 046 seed process]
+status=PASS
+package_version=1.0.4
+phase=seed
+count=2
+persisted=true
+raw_identifiers_stored=false
+
+[Expected failure-closed checks]
+repeat_seed_error=CP_SEED_PREEXISTING_STATE
+repeat_seed_overwrote_state=false
+missing_confirmation_error=VERIFY_CONFIRMATION_REQUIRED
+missing_confirmation_network_used=false
+
+[CloudBase 046 resume process]
+status=PASS
+package_version=1.0.4
+phase=resume
+count=4
+previous_process_state_loaded=true
+cross_identity_visible=false
+
+[CloudBase 046 cleanup process]
+status=PASS
+package_version=1.0.4
+phase=cleanup
+cleanup=PASS
+remaining_rows=0
+
+[Release boundary]
+single_instance_shared_checkpointer_verified=true
+user_store_adapter=sqlite
+real_user_data_migrated=false
+dual_instance_verified=false
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false
