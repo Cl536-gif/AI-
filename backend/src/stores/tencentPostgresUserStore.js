@@ -120,6 +120,18 @@ function mapPlanTransition(userId, planId, value) {
   };
 }
 
+function mapPlanRevisionCommand(userId, value) {
+  if (!value) return null;
+  return {
+    commandId: value.commandId ?? value.command_id,
+    userId,
+    planId: value.planId ?? value.plan_id,
+    status: value.status,
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+    updatedAt: normalizeTimestamp(value.updatedAt ?? value.updated_at),
+  };
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -627,6 +639,51 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function getPlanRevisionCommand(userId, commandId) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedCommandId = String(commandId || '').trim();
+    if (!normalizedCommandId) throw new Error('新版计划命令ID不能为空');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT command_id, plan_id, status, created_at, updated_at FROM app.plan_revision_commands WHERE user_id = $1 AND command_id = $2 LIMIT 1',
+        [normalizedUserId, normalizedCommandId]
+      );
+      return mapPlanRevisionCommand(normalizedUserId, result.rows[0]);
+    });
+  }
+
+  async function recordPlanRevisionCommand(userId, commandId, {
+    planId,
+    status,
+    now = new Date().toISOString(),
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedCommandId = String(commandId || '').trim();
+    const normalizedPlanId = String(planId || '').trim();
+    const normalizedStatus = String(status || '').trim();
+    if (!normalizedCommandId) throw new Error('新版计划命令ID不能为空');
+    if (!normalizedPlanId) throw new Error('新版计划命令缺少计划ID');
+    if (!['draft_created', 'delivered'].includes(normalizedStatus)) {
+      throw new Error('新版命令状态不正确');
+    }
+    const recordedAt = new Date(now);
+    if (Number.isNaN(recordedAt.getTime())) throw new Error('新版计划命令时间格式不正确');
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.record_current_user_plan_revision_command($1, $2, $3, $4::timestamptz) AS result',
+        [
+          normalizedCommandId,
+          normalizedPlanId,
+          normalizedStatus,
+          recordedAt.toISOString(),
+        ]
+      );
+      const saved = mapPlanRevisionCommand(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL新版计划命令写入未返回结果');
+      return saved;
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -734,6 +791,8 @@ function createTencentPostgresUserStore({
     transitionPlan,
     activateInitialPlanAndTrial,
     listPlanTransitions,
+    getPlanRevisionCommand,
+    recordPlanRevisionCommand,
     appendEvent,
     getEvent,
     listEvents,
