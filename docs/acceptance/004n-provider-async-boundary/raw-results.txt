@@ -27,7 +27,26 @@ bailian_missing_configuration_warning_non_fatal_for_package_tests=true
 [Public health endpoint]
 {"status":"ok"}
 
+[CloudBase 029 Bailian configuration attempt]
+api_key_configured=true
+app_id_configured=true
+user_store_adapter_sqlite=true
+api_key_format_guard=PASS
+real_chat_status=FAIL
+error_code=INVALID_API_KEY
+cause=incorrect_api_key_selected
+
+[CloudBase 030 Bailian configuration correction]
+api_key_configured=true
+app_id_configured=true
+user_store_adapter_sqlite=true
+real_chat_http_status=200
+reply_present=true
+session_id_present=true
+real_chat_status=PASS
+
 [Release boundary]
 database_schema_changed=false
 production_adapter_switched=false
 http_postgres_gray_test_completed=false
+bailian_real_chat_verified=true
