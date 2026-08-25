@@ -120,7 +120,7 @@ async function synchronizeGraphServiceChoice(userId, state, {
 }
 
 function createGraphPersistenceCoordinator({
-  store = getUserStore(),
+  store = null,
   profileWriter = persistGraphProfile,
   contextReader = buildLongTermContext,
   eventProcessor = processLongTermUserMessage,
@@ -130,24 +130,33 @@ function createGraphPersistenceCoordinator({
   initialPlanProcessor = persistInitialLongTermPlan,
   adviceWriter = persistGraphAdvice,
 } = {}) {
+  // The production adapter is selected after route modules are loaded. Resolve
+  // the provider at request time unless a test explicitly injects a store;
+  // otherwise the default coordinator permanently captures the initial SQLite
+  // store before configureUserStoreFromEnv() can select PostgreSQL.
+  const resolveActiveStore = () => store || getUserStore();
+
   async function prepareContext(userId, { now = new Date().toISOString() } = {}) {
-    return await contextReader(userId, { store, now });
+    return await contextReader(userId, { store: resolveActiveStore(), now });
   }
 
   async function persistTurn(userId, message, threadId, state, {
     now = new Date().toISOString(),
     timezone = 'Asia/Shanghai',
   } = {}) {
-    const profilePersistence = await profileWriter(userId, state, { store, now });
-    const advicePersistence = await adviceWriter(userId, threadId, state, { store, now });
-    const serviceStatus = await synchronizeGraphServiceChoice(userId, state, { store, now });
+    const activeStore = resolveActiveStore();
+    const profilePersistence = await profileWriter(userId, state, { store: activeStore, now });
+    const advicePersistence = await adviceWriter(userId, threadId, state, { store: activeStore, now });
+    const serviceStatus = await synchronizeGraphServiceChoice(
+      userId, state, { store: activeStore, now }
+    );
     let eventPersistence;
     try {
       eventPersistence = await eventProcessor(userId, message, {
         threadId,
         now,
         timezone,
-        store,
+        store: activeStore,
       });
     } catch (err) {
       // 普通事件抽取失败不能吞掉已经生成的聊天回复；返回明确状态，供日志
@@ -159,16 +168,22 @@ function createGraphPersistenceCoordinator({
         error: err.message,
       };
     }
-    const planAdjustment = await planLifecycleProcessor(userId, eventPersistence, { store, now });
+    const planAdjustment = await planLifecycleProcessor(
+      userId, eventPersistence, { store: activeStore, now }
+    );
     const planRecovery = planAdjustment.action === 'plan_paused'
       ? { status: 'awaiting_choice', action: 'none', reason: 'plan_just_paused' }
-      : await planRecoveryProcessor(userId, message, { store, now });
+      : await planRecoveryProcessor(userId, message, { store: activeStore, now });
     // 草稿创建、计算审计和正式启用任一步失败都会抛出，路由不会把已经
     // 生成但没有持久化成功的“新版方案”返回给用户。
-    const planRevision = await planRevisionProcessor(userId, state?.planRevisionDraftCommand, { store, now });
-    const initialLongTermPlan = await initialPlanProcessor(userId, state?.initialLongTermPlanCommand, { store, now });
+    const planRevision = await planRevisionProcessor(
+      userId, state?.planRevisionDraftCommand, { store: activeStore, now }
+    );
+    const initialLongTermPlan = await initialPlanProcessor(
+      userId, state?.initialLongTermPlanCommand, { store: activeStore, now }
+    );
     const effectiveServiceStatus = initialLongTermPlan.status === 'delivered'
-      ? await userService.getServiceStatus(userId, { store })
+      ? await userService.getServiceStatus(userId, { store: activeStore })
       : serviceStatus;
     return {
       profilePersistence, advicePersistence, serviceStatus: effectiveServiceStatus,

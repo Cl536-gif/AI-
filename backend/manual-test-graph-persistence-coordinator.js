@@ -3,7 +3,15 @@ const os = require('os');
 const path = require('path');
 const { createUserStore } = require('./src/services/userStore');
 const { createLongTermEventProcessor } = require('./src/services/longTermEventService');
-const { createGraphPersistenceCoordinator } = require('./src/services/graphPersistenceCoordinator');
+const {
+  createGraphPersistenceCoordinator,
+  prepareGraphContext,
+  persistGraphTurn,
+} = require('./src/services/graphPersistenceCoordinator');
+const {
+  setUserStore,
+  resetUserStore,
+} = require('./src/stores/userStoreProvider');
 const {
   confirmLongTermProfile,
   activateTrialAfterOfficialPlan,
@@ -76,12 +84,49 @@ async function main() {
   assert(context.accessMode === 'long_term', '路由前没有得到长期上下文');
   assert(context.recentEvents[0].eventType === 'meal', '路由前上下文没有包含最新事件');
 
+  // graphPersistenceCoordinator is imported before the provider is changed,
+  // matching server startup. The default coordinator must still use the store
+  // selected afterwards instead of retaining the initial SQLite singleton.
+  const selectedStore = createUserStore({ dbPath: path.join(tempDir, 'selected.db') });
+  const selectedUserId = 'anon:99999999-9999-4999-8999-999999999999';
+  selectedStore.ensureUser(selectedUserId);
+  selectedStore.updateUserTimezone(selectedUserId, 'Asia/Tokyo');
+  setUserStore(selectedStore, { adapterName: 'SelectedAfterModuleLoadStore' });
+  const dynamicallySelectedContext = await prepareGraphContext(selectedUserId, {
+    now: '2026-08-05T14:20:00+08:00',
+  });
+  assert(
+    dynamicallySelectedContext.temporalContext.timezone === 'Asia/Tokyo',
+    '默认协调器缓存了模块加载时的SQLite Store，没有使用随后选择的Provider'
+  );
+  const dynamicallyPersisted = await persistGraphTurn(
+    selectedUserId,
+    '今天午餐怎么吃？',
+    'thread-dynamic-provider',
+    {
+      ...initialState,
+      messages: [
+        { role: 'human', content: '今天午餐怎么吃？' },
+        { role: 'assistant', content: '午餐建议主食一拳、蛋白质一掌、蔬菜一到两拳。' },
+      ],
+    },
+    { now: '2026-08-05T14:25:00+08:00' }
+  );
+  assert(dynamicallyPersisted.advicePersistence.status === 'recorded', '动态Provider没有记录建议');
+  assert(
+    selectedStore.listAdviceHistory(selectedUserId).length === 1,
+    '动态Provider响应显示recorded，但所选Store没有建议记录'
+  );
+  resetUserStore();
+  selectedStore.close();
+
   store.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
   console.log('✅ 路由生命周期写入基础档案并为免费用户阻断长期事件');
   console.log('✅ LangGraph的subscribed只映射为建档中，不会伪造付费或启动体验');
   console.log('✅ 体验开始后用户消息才进入事件抽取与写入链');
   console.log('✅ 下一轮请求前能够读取授权范围内的长期上下文');
+  console.log('✅ 默认协调器在请求时解析随后选择的Provider，上下文与建议写入不再缓存启动期SQLite Store');
 }
 
 main().catch((err) => {
