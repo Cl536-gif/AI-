@@ -132,6 +132,31 @@ function mapPlanRevisionCommand(userId, value) {
   };
 }
 
+function mapNotification(value) {
+  if (!value) return null;
+  return {
+    notificationId: value.notificationId ?? value.notification_id,
+    userId: value.userId ?? value.user_id,
+    notificationType: value.notificationType ?? value.notification_type,
+    dedupeKey: value.dedupeKey ?? value.dedupe_key,
+    scheduledAt: normalizeTimestamp(value.scheduledAt ?? value.scheduled_at),
+    status: value.status,
+    attempts: Number(value.attempts),
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+    sentAt: normalizeTimestamp(value.sentAt ?? value.sent_at),
+  };
+}
+
+function normalizeQueueTimestamp(value, label) {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) throw new Error(`${label}格式不正确`);
+  return timestamp.toISOString();
+}
+
+function normalizeQueueLimit(value, fallback = 100) {
+  return Math.max(1, Math.min(Number(value) || fallback, 500));
+}
+
 function mapEventRow(userId, row) {
   if (!row) return null;
   return {
@@ -684,6 +709,60 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function enqueueDueRenewalReminders({
+    now = new Date().toISOString(),
+    limit = 100,
+  } = {}) {
+    const normalizedNow = normalizeQueueTimestamp(now, '续费提醒入队时间');
+    const safeLimit = normalizeQueueLimit(limit);
+    return runPostgresClient(async (client) => {
+      const result = await client.query(
+        'SELECT app.enqueue_due_renewal_reminders($1::timestamptz, $2::integer) AS result',
+        [normalizedNow, safeLimit]
+      );
+      const notifications = firstRpcResult(result);
+      if (!Array.isArray(notifications)) {
+        throw new Error('PostgreSQL续费提醒入队未返回数组');
+      }
+      return notifications.map(mapNotification);
+    });
+  }
+
+  async function listPendingNotifications({
+    now = new Date().toISOString(),
+    limit = 100,
+  } = {}) {
+    const normalizedNow = normalizeQueueTimestamp(now, '待发送通知查询时间');
+    const safeLimit = normalizeQueueLimit(limit);
+    return runPostgresClient(async (client) => {
+      const result = await client.query(
+        'SELECT app.list_pending_notifications($1::timestamptz, $2::integer) AS result',
+        [normalizedNow, safeLimit]
+      );
+      const notifications = firstRpcResult(result);
+      if (!Array.isArray(notifications)) {
+        throw new Error('PostgreSQL待发送通知查询未返回数组');
+      }
+      return notifications.map(mapNotification);
+    });
+  }
+
+  async function markNotificationSent(notificationId, {
+    sentAt = new Date().toISOString(),
+  } = {}) {
+    const normalizedNotificationId = String(notificationId || '').trim();
+    if (!normalizedNotificationId) throw new Error('提醒ID不能为空');
+    if (normalizedNotificationId.length > 128) throw new Error('提醒ID格式不正确');
+    const normalizedSentAt = normalizeQueueTimestamp(sentAt, '提醒发送时间');
+    return runPostgresClient(async (client) => {
+      const result = await client.query(
+        'SELECT app.mark_notification_sent($1, $2::timestamptz) AS result',
+        [normalizedNotificationId, normalizedSentAt]
+      );
+      return result?.rows?.[0]?.result === true;
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -793,6 +872,9 @@ function createTencentPostgresUserStore({
     listPlanTransitions,
     getPlanRevisionCommand,
     recordPlanRevisionCommand,
+    enqueueDueRenewalReminders,
+    listPendingNotifications,
+    markNotificationSent,
     appendEvent,
     getEvent,
     listEvents,

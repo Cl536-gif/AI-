@@ -25,6 +25,9 @@ const DATABASE_READY_METHODS = Object.freeze([
   'listPlanTransitions',
   'getPlanRevisionCommand',
   'recordPlanRevisionCommand',
+  'enqueueDueRenewalReminders',
+  'listPendingNotifications',
+  'markNotificationSent',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -33,9 +36,6 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'enqueueDueRenewalReminders',
-  'listPendingNotifications',
-  'markNotificationSent',
   'recordAdvice',
   'listAdviceHistory',
   'listUserSummaries',
