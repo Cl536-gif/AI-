@@ -1,0 +1,6 @@
+evidence_id,stage,environment,result,source
+004l-01,contract and permission review,Local review,PASS 35/38 READY 3 CONTRACT CHANGE,raw-results.txt
+004l-02,local snapshot and guard tests,Local Node.js,PASS 8 READS MAX CONCURRENCY 1,raw-results.txt
+004l-03,initial adapter rollback sandbox,CloudBase 023,FAIL 22001 ROLLED BACK,raw-results.txt
+004l-04,second adapter rollback sandbox,CloudBase 024,FAIL 23514 ROLLED BACK,raw-results.txt
+004l-05,final adapter rollback sandbox,CloudBase 025,8/8 PASS cleanup PASS,raw-results.txt

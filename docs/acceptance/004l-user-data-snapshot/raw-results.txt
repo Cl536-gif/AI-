@@ -1,0 +1,47 @@
+004l user data snapshot cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Contract and permission review]
+contract_methods=38
+database_ready_methods=35
+schema_required_methods=0
+contract_change_required_methods=3
+list_user_summaries_admin_contract_required=true
+cutover_ready=false
+
+[Local adapter verification]
+snapshot_sections=8 PASS
+snapshot_queries=8
+max_concurrent_transactions=1
+cloud_guard=PASS
+full_adapter_regression=PASS
+user_service_boundary=PASS
+
+[Git implementation batch]
+ac51a1b Implement PostgreSQL user data snapshot
+
+[CloudBase 023 adapter rollback sandbox]
+{"batch":"004l-snapshot-cloud","status":"FAIL","errorCode":"22001"}
+fixture_source_exceeded_existing_length_constraint=true
+transaction_committed=false
+
+[Git first fixture repair]
+f1b2654 Fix snapshot cloud verification fixture source
+
+[CloudBase 024 adapter rollback sandbox]
+{"batch":"004l-snapshot-cloud","status":"FAIL","errorCode":"23514"}
+fixture_source_not_in_existing_allowlist=true
+transaction_committed=false
+
+[Git final fixture repair]
+51eef24 Use valid profile source in snapshot verification
+
+[CloudBase deployment]
+Version 025 deployed successfully.
+
+[CloudBase 025 adapter rollback sandbox]
+{"batch":"004l-snapshot-cloud","status":"PASS","processPid":61,"checkCount":8,"cleanup":"PASS"}
+
+[Production boundary]
+user_store_adapter=sqlite
+cross_user_summary_permission_added=false
