@@ -35,6 +35,7 @@ function main() {
   const revisions = store.listProfileRevisions(userId);
   assert(revisions.length === 2, '档案历史版本数量错误');
   assert(revisions[0].profileVersion === 2 && revisions[1].profileVersion === 1, '档案历史版本顺序错误');
+  assert(store.getProfile(userId).profileVersion === 2, '当前档案没有读取user_profiles中的最新版本');
 
   let conflictCaught = false;
   try {
@@ -71,6 +72,21 @@ function main() {
   assert(store.listEvents(userId).length === 2, '事件数量错误');
   assert(store.listEvents(userId, { eventType: 'snack' })[0].eventId === snack.eventId, '事件类型过滤错误');
 
+  const otherUserId = 'test-user-002';
+  store.updateProfile(otherUserId, {
+    body: { ageYears: 19 },
+    diet: { scene: 'takeaway' },
+  });
+  store.appendEvent({
+    userId: otherUserId,
+    eventType: 'meal',
+    occurredAt: '2026-08-05T18:00:00+08:00',
+    payload: { mealType: 'dinner', foods: ['米饭'] },
+  });
+  assert(store.getProfile(userId).profile.body.ageYears === 22, '其他用户的档案污染了当前用户');
+  assert(store.listEvents(userId).length === 2, '其他用户的事件污染了当前用户');
+  assert(store.getEvent(otherUserId, meal.eventId) === null, '其他用户能够读取当前用户的事件');
+
   const consent = store.recordConsent({
     userId,
     consentType: 'long_term_profile',
@@ -78,13 +94,25 @@ function main() {
     recordedAt: '2026-08-05T10:00:00+08:00',
   });
   assert(consent.status === 'granted', '授权记录没有保存');
+  const revokedConsent = store.recordConsent({
+    userId,
+    consentType: 'long_term_profile',
+    status: 'revoked',
+    recordedAt: '2026-08-05T11:00:00+08:00',
+  });
+  assert(revokedConsent.status === 'revoked', '撤回授权没有成为最新状态');
+  assert(
+    store.getLatestConsent(userId, 'long_term_profile').status === 'revoked',
+    '读取授权时没有返回最新撤回状态'
+  );
 
   store.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
   console.log('✅ 匿名用户身份与活跃时间兼容旧接口');
   console.log('✅ 档案局部更新、版本冲突和历史版本正常');
   console.log('✅ 饮食/零食事件追加、幂等去重与类型查询正常');
-  console.log('✅ 长期档案授权记录正常');
+  console.log('✅ 不同用户的档案和事件相互隔离');
+  console.log('✅ 长期档案授权追加记录与撤回状态正常');
 }
 
 try {
