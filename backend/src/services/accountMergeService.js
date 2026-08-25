@@ -1,4 +1,4 @@
-const userStore = require('./userStore');
+const { getUserStore } = require('../stores/userStoreProvider');
 
 function requireAuthenticatedAccount(authContext) {
   if (!authContext || authContext.isAuthenticated !== true ||
@@ -9,7 +9,7 @@ function requireAuthenticatedAccount(authContext) {
 }
 
 function claimGuestDataForAuthenticatedAccount(sourceAnonymousUserId, authContext, {
-  store = userStore,
+  store = getUserStore(),
   now = new Date().toISOString(),
 } = {}) {
   const accountId = requireAuthenticatedAccount(authContext);
@@ -17,21 +17,21 @@ function claimGuestDataForAuthenticatedAccount(sourceAnonymousUserId, authContex
 }
 
 function getGuestMergeForAuthenticatedAccount(sourceAnonymousUserId, authContext, {
-  store = userStore,
+  store = getUserStore(),
 } = {}) {
   const accountId = requireAuthenticatedAccount(authContext);
   return store.getUserMerge(`acct:${accountId}`, sourceAnonymousUserId);
 }
 
 function getMergeReviewForAuthenticatedAccount(mergeId, authContext, {
-  store = userStore,
+  store = getUserStore(),
 } = {}) {
   const accountId = requireAuthenticatedAccount(authContext);
   return store.getMergeReview(`acct:${accountId}`, mergeId);
 }
 
 async function authorizeMergedMenstrualHistory(userId, mergeId, authContext, {
-  store = userStore,
+  store = getUserStore(),
   now = new Date().toISOString(),
 } = {}) {
   const accountId = requireAuthenticatedAccount(authContext);

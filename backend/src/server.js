@@ -5,8 +5,13 @@ const config = require('./config');
 const chatRouter = require('./routes/chat');
 const chatLocalRouter = require('./routes/chatLocal');
 const chatLanggraphRouter = require('./routes/chatLanggraph');
+const { configureUserStoreFromEnv } = require('./stores/userStoreProvider');
 const { createPostgresReadinessHandler } = require('./db/postgresReadiness');
 const { createGracefulShutdown } = require('./serverLifecycle');
+
+// SQLite remains the default. Tencent PostgreSQL is selected only when the
+// deployment explicitly sets USER_STORE_ADAPTER=tencent-postgres.
+configureUserStoreFromEnv();
 
 const app = express();
 
