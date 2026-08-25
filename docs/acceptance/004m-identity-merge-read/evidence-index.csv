@@ -1,0 +1,5 @@
+evidence_id,stage,environment,result,source
+004m-01,contract and permission review,Local review,PASS 37/37 READY 1 ADMIN METHOD SEPARATED,raw-results.txt
+004m-02,local adapter business and guard tests,Local Node.js,PASS,raw-results.txt
+004m-03,implementation batch,Git,PASS a039c1f,raw-results.txt
+004m-04,adapter rollback sandbox,CloudBase 027,7/7 PASS cleanup PASS,raw-results.txt

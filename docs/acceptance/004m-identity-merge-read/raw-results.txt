@@ -1,0 +1,40 @@
+004m identity merge read cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Contract and permission review]
+production_contract_methods=37
+database_ready_methods=37
+schema_required_methods=0
+contract_change_required_methods=0
+admin_methods_separated=1
+list_user_summaries_in_production_contract=false
+cutover_ready=false
+
+[Local verification]
+account_merge_business=PASS
+user_store_contract=PASS
+tencent_postgres_capabilities=PASS
+tencent_postgres_adapter=PASS
+implemented_method_count=37
+unavailable_method_count=0
+parameterized_queries_only=true
+production_adapter_selection_changed=false
+cloud_guard=PASS
+
+[Git implementation batch]
+a039c1f Complete PostgreSQL UserStore contract
+files_changed=11
+insertions=695
+deletions=29
+
+[CloudBase deployment]
+Version 027 deployed successfully.
+
+[CloudBase 027 adapter rollback sandbox]
+{"batch":"004m-merge-read-cloud","status":"PASS","processPid":36,"checkCount":7,"cleanup":"PASS"}
+
+[Production boundary]
+user_store_adapter=sqlite
+cross_user_summary_permission_added=false
+transaction_committed=false
+cleanup=PASS
