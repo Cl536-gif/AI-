@@ -4,6 +4,7 @@ const {
   detectDirectQuestion,
   answerDirectQuestion,
   detectDirectAnswerIssues,
+  buildEmptyProfileDirectAnswer,
   stripTrailingCollectionQuestion,
   stripRepeatedWelcome,
 } = require('./src/langgraph/nodes/directQuestion');
@@ -87,6 +88,21 @@ async function main() {
       { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
     ).includes('没有档案或历史时编造了用户习惯')
   );
+  assert.ok(
+    detectDirectAnswerIssues(
+      '今天午餐怎么吃？',
+      '今天午餐，咱们先按“食堂自己打饭”来搭配哈。',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ).includes('没有档案或历史时编造了用户习惯')
+  );
+  assert.deepEqual(
+    detectDirectAnswerIssues(
+      '今天午餐怎么吃？',
+      '如果你今天吃食堂，可以选一份主食、一份蛋白质和一份蔬菜。',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ),
+    []
+  );
 
   let emptyContextAttempts = 0;
   const emptyContextAnswer = await answerDirectQuestion(
@@ -107,6 +123,29 @@ async function main() {
   );
   assert.equal(emptyContextAttempts, 2, '空档案伪记忆没有触发重试');
   assert.doesNotMatch(emptyContextAnswer.messages[0].content, /老底子|之前食堂/);
+
+  let persistentHallucinationAttempts = 0;
+  const deterministicFallback = await answerDirectQuestion(
+    {
+      directQuestion: '今天午餐怎么吃？',
+      longTermContext: { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] },
+    },
+    {
+      chatModel: {
+        async invoke() {
+          persistentHallucinationAttempts += 1;
+          return { content: '今天午餐，咱们先按“食堂自己打饭”来搭配哈。' };
+        },
+      },
+    }
+  );
+  assert.equal(persistentHallucinationAttempts, 3, '持续伪记忆时应耗尽三次模型重试');
+  assert.equal(
+    deterministicFallback.messages[0].content,
+    buildEmptyProfileDirectAnswer('今天午餐怎么吃？')
+  );
+  assert.match(deterministicFallback.messages[0].content, /通用搭配/);
+  assert.doesNotMatch(deterministicFallback.messages[0].content, /食堂自己打饭|老底子/);
   assert.equal(stripTrailingCollectionQuestion('先正常吃饭。那我接着问你预算？'), '先正常吃饭。');
   assert.equal(stripRepeatedWelcome('宝子回来啦～今天中午正常吃饭。', true), '今天中午正常吃饭。');
 

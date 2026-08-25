@@ -120,6 +120,12 @@ async function answerDirectQuestion(state, { chatModel = model } = {}) {
     if (issues.length === 0) break;
   }
 
+  // 空档案时，模型即使收到明确约束也可能连续把食堂、口味等写成既定事实。
+  // 这种错误不能在重试耗尽后原样放行；改用不依赖个人档案的确定性答案。
+  if (issues.includes('没有档案或历史时编造了用户习惯')) {
+    response = { content: buildEmptyProfileDirectAnswer(questionText) };
+  }
+
   const safeContent = stripRepeatedWelcome(
     stripTrailingCollectionQuestion(response.content),
     state.emotionalSupportDeliveredThisTurn
@@ -167,11 +173,30 @@ function detectDirectAnswerIssues(questionText, answerText, longTermContext = nu
     longTermContext?.activePlan ||
     longTermContext?.pausedPlan
   );
+  const assertsUnknownProfile =
+    /(?:老底子|按你(?:之前|原来|平时|一直)[^。！？\n]{0,16}(?:口味|预算|习惯|档案|记录)|之前的档案|你平时(?:主要)?(?:吃|点|不吃|喜欢))/.test(answer) ||
+    /(?:咱们|今天|这顿)?[^。！？\n]{0,10}(?:先)?按[“"'‘’]?(?:食堂|外卖|自己打饭|固定套餐|重口味|清淡|酸甜|不吃|能吃)[^。！？\n]{0,24}(?:来|搭配|安排)/.test(answer) ||
+    /(?:食堂自己打饭|固定套餐|经常点外卖|一贯重口味|一直吃得清淡)/.test(answer);
   if (!hasKnownProfile && !hasKnownHistory &&
-      /(?:老底子|按你(?:之前|原来|平时|一直)[^。！？\n]{0,16}(?:口味|预算|习惯|档案|记录)|之前的档案|你平时(?:主要)?(?:吃|点|不吃|喜欢))/.test(answer)) {
+      assertsUnknownProfile) {
     issues.push('没有档案或历史时编造了用户习惯');
   }
   return issues;
+}
+
+function buildEmptyProfileDirectAnswer(questionText) {
+  const question = String(questionText || '');
+  if (/(?:吃|餐|食物|外卖|食堂|早餐|午餐|晚餐|加餐)/.test(question)) {
+    return (
+      '我目前还没有你已确认的就餐方式和口味资料，所以先给你一个不依赖个人档案的通用搭配：' +
+      '主食约一拳、蛋白质约一掌、蔬菜一到两拳，按你实际买得到的食物选择。' +
+      '这里不预设你吃食堂、点外卖或偏好哪种口味，等你明确告诉我后再为你调整。'
+    );
+  }
+  return (
+    '我目前还没有你已确认的个人档案，所以不会假设你的口味、预算或生活习惯。' +
+    '这条先按不依赖个人资料的通用原则处理；需要个性化的部分，等你明确提供后再调整。'
+  );
 }
 
 function stripTrailingCollectionQuestion(value) {
@@ -189,6 +214,7 @@ module.exports = {
   detectDirectQuestion,
   answerDirectQuestion,
   detectDirectAnswerIssues,
+  buildEmptyProfileDirectAnswer,
   stripTrailingCollectionQuestion,
   stripRepeatedWelcome,
 };
