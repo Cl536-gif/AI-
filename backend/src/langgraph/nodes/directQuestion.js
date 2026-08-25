@@ -173,10 +173,18 @@ function detectDirectAnswerIssues(questionText, answerText, longTermContext = nu
     longTermContext?.activePlan ||
     longTermContext?.pausedPlan
   );
+  const mealSceneTerms = ['食堂', '外卖', '固定套餐', '自己打饭'];
+  const assertsUnknownMealScene = answer
+    .split(/[。！？\n]+/u)
+    .some((sentence) =>
+      mealSceneTerms.some((term) => sentence.includes(term) && !question.includes(term)) &&
+      !/(?:如果|假如|若是|若你|要是|倘若|不预设|没有确认|尚未确认|还没确定|并不知道)/.test(sentence)
+    );
   const assertsUnknownProfile =
     /(?:老底子|按你(?:之前|原来|平时|一直)[^。！？\n]{0,16}(?:口味|预算|习惯|档案|记录)|之前的档案|你平时(?:主要)?(?:吃|点|不吃|喜欢))/.test(answer) ||
     /(?:咱们|今天|这顿)?[^。！？\n]{0,10}(?:先)?按[“"'‘’]?(?:食堂|外卖|自己打饭|固定套餐|重口味|清淡|酸甜|不吃|能吃)[^。！？\n]{0,24}(?:来|搭配|安排)/.test(answer) ||
-    /(?:食堂自己打饭|固定套餐|经常点外卖|一贯重口味|一直吃得清淡)/.test(answer);
+    /(?:食堂自己打饭|固定套餐|经常点外卖|一贯重口味|一直吃得清淡)/.test(answer) ||
+    assertsUnknownMealScene;
   if (!hasKnownProfile && !hasKnownHistory &&
       assertsUnknownProfile) {
     issues.push('没有档案或历史时编造了用户习惯');

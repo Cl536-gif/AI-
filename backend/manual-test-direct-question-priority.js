@@ -95,6 +95,13 @@ async function main() {
       { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
     ).includes('没有档案或历史时编造了用户习惯')
   );
+  assert.ok(
+    detectDirectAnswerIssues(
+      '今天午餐怎么吃？',
+      '今天午餐，咱们先按最基础的食堂常见搭配来。',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ).includes('没有档案或历史时编造了用户习惯')
+  );
   assert.deepEqual(
     detectDirectAnswerIssues(
       '今天午餐怎么吃？',
