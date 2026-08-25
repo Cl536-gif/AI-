@@ -1,0 +1,61 @@
+004p LangGraph V3 route cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git implementation batch]
+06f2ec4 Connect LangGraph V3 persistence route
+files_changed=41
+insertions=3080
+deletions=128
+
+[Fact-grounding fixes]
+60c0355 Prevent empty-profile memory hallucinations
+9838c10 Add deterministic empty-profile answer fallback
+9be3ad2 Enforce empty-profile meal scene grounding
+branch_remote_sync=PASS
+
+[Local regression after final fix]
+direct_question_priority=PASS
+answer_follow_up_context=PASS
+returning_user_context=PASS
+browser_comments_regression=PASS
+async_http_identity_boundary=PASS
+
+[CloudBase 033 package matrix]
+chat_langgraph_async_http=PASS
+direct_question_priority=PASS
+returning_user_context=PASS
+browser_comments_regression=PASS
+plan_revision_conversation=PASS
+plan_revision_preparation=PASS
+generate_plan_revision=PASS
+
+[CloudBase 033-035 fact-grounding findings]
+cloudbase_033_empty_profile_fact_grounding=FAIL
+cloudbase_034_empty_profile_fact_grounding=FAIL
+cloudbase_035_empty_profile_fact_grounding=FAIL
+identity_resolution_remained_correct=true
+profile_remained_unchanged=true
+basic_profile_only_access=true
+fix_strategy=scene_grounding_plus_deterministic_fallback
+
+[CloudBase 036 real HTTP]
+http_status=200
+identity_status=anonymous_resolved
+profile_persistence=unchanged
+context_access_mode=basic_profile_only
+all_profile_slots_unconfirmed=true
+generic_plate_answer_present=true
+unknown_meal_scene_asserted=false
+follow_up_collection_continued=true
+fact_grounding_status=PASS
+
+[CloudBase 036 health]
+http_status=200
+body_status=ok
+
+[Release boundary]
+database_schema_changed=false
+production_adapter_switched=false
+production_adapter=sqlite
+postgres_single_instance_gray_test_completed=false
+acceptance_contains_sensitive_identifiers=false

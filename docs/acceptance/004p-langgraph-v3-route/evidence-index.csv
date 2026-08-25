@@ -1,0 +1,8 @@
+evidence_id,stage,environment,result,source
+004p-01,implementation and local regression,Local Node.js,PASS,raw-results.txt
+004p-02,package regression matrix,CloudBase 033,PASS,raw-results.txt
+004p-03,initial real HTTP fact grounding,CloudBase 033,FAIL THEN FIXED,raw-results.txt
+004p-04,empty profile prompt and output guard,CloudBase 034,FAIL THEN FIXED,raw-results.txt
+004p-05,deterministic fallback verification,CloudBase 035,FAIL THEN FIXED,raw-results.txt
+004p-06,scene grounding real HTTP verification,CloudBase 036,PASS,raw-results.txt
+004p-07,public health endpoint,CloudBase 036,PASS,raw-results.txt
