@@ -99,7 +99,7 @@ async function verifySnapshotInRollbackSandbox(pool, evidence) {
         scene: 'cafeteria',
         goals: ['004l snapshot verification'],
       },
-    }, { source: '004l_cloud_sandbox', expectedVersion: 0 });
+    }, { source: '004l_cloud', expectedVersion: 0 });
     await store.setServiceStatus(userA, {
       status: 'profile_confirmed',
     }, { reason: '004l_snapshot_fixture' });
