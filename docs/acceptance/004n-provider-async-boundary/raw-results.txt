@@ -1,0 +1,33 @@
+004n provider and async boundary cloud acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git implementation batch]
+c42a0ad Enable PostgreSQL UserStore provider boundary
+files_changed=7
+insertions=375
+deletions=22
+
+[CloudBase deployment]
+Version 028 deployed successfully.
+user_store_adapter=sqlite
+
+[CloudBase 028 provider selection]
+{"batch":"004n-provider-selection","status":"PASS","sqliteDefaultAvailable":true,"tencentPostgresExplicitOptInAvailable":true,"unknownAdapterRejected":true,"contractMethodCount":37}
+
+[CloudBase 028 async activity boundary]
+{"batch":"004n-async-boundary","status":"PASS","greetingActivityAwaited":true,"chatActivityAwaited":true}
+
+[CloudBase 028 home greeting]
+PASS: 首页开场解释提问原因与隐私，查看条款后等待用户继续，再开始饮食收集
+
+[Runtime warnings]
+sqlite_experimental_warning_non_fatal=true
+bailian_missing_configuration_warning_non_fatal_for_package_tests=true
+
+[Public health endpoint]
+{"status":"ok"}
+
+[Release boundary]
+database_schema_changed=false
+production_adapter_switched=false
+http_postgres_gray_test_completed=false
