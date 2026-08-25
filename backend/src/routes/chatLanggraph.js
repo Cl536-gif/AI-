@@ -14,8 +14,8 @@
 // 对比测试用，不是生产级持久化方案。
 const express = require('express');
 const crypto = require('crypto');
-const { MemorySaver } = require('@langchain/langgraph');
 const { workflow } = require('../langgraph/graph');
+const { createLangGraphCheckpointer } = require('../langgraph/checkpointerProvider');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
 const userService = require('../services/userService');
@@ -37,8 +37,8 @@ const MAX_MESSAGE_LENGTH = 2000;
 const GLOBAL_PRIVACY_FOLLOW_UP =
   '以上是最重要的几条。还有隐私问题可以继续问我；如果没有，直接接着回答刚才的问题就好。';
 
-const checkpointer = new MemorySaver();
-const graphWithMemory = workflow.compile({ checkpointer });
+const { checkpointer } = createLangGraphCheckpointer();
+const graphWithCheckpointer = workflow.compile({ checkpointer });
 
 function getMessageRole(message) {
   if (!message) return undefined;
@@ -195,7 +195,7 @@ router.post('/', async (req, res, next) => {
     }
     inputMessages.push({ role: 'human', content: graphMessage });
     const isHomepageHandoff = !threadId && introAlreadyShown;
-    const result = await graphWithMemory.invoke(
+    const result = await graphWithCheckpointer.invoke(
       {
         messages: inputMessages,
         longTermContext,

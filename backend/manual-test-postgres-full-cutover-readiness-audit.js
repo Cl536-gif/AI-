@@ -12,6 +12,9 @@ const {
   FULL_CUTOVER_CONFIRMATION,
   assertTencentPostgresCutoverAllowed,
 } = require('./src/stores/tencentPostgresCutoverGate');
+const {
+  resolveLangGraphCheckpointerPolicy,
+} = require('./src/langgraph/checkpointerProvider');
 
 const root = __dirname;
 const routeSource = fs.readFileSync(path.join(root, 'src/routes/chatLanggraph.js'), 'utf8');
@@ -40,7 +43,20 @@ assert.throws(
   (error) => error?.code === 'POSTGRES_FULL_CUTOVER_NOT_READY'
 );
 
-assert(routeSource.includes('new MemorySaver()'));
+const defaultCheckpointerPolicy = resolveLangGraphCheckpointerPolicy({ env: {} });
+assert.strictEqual(defaultCheckpointerPolicy.backend, 'memory');
+assert.strictEqual(defaultCheckpointerPolicy.shared, false);
+assert(routeSource.includes('createLangGraphCheckpointer()'));
+assert.throws(
+  () => resolveLangGraphCheckpointerPolicy({
+    env: {
+      USER_STORE_ADAPTER: 'tencent-postgres',
+      TENCENT_PG_CUTOVER_MODE: FULL_CUTOVER_MODE,
+      TENCENT_PG_CUTOVER_CONFIRM: FULL_CUTOVER_CONFIRMATION,
+    },
+  }),
+  (error) => error?.code === 'LANGGRAPH_SHARED_CHECKPOINTER_REQUIRED'
+);
 assert(!gateSource.includes('TENCENT_PG_FULL_MAX_INSTANCES'));
 assert(!gateSource.includes('TENCENT_PG_FULL_CONNECTION_BUDGET'));
 
