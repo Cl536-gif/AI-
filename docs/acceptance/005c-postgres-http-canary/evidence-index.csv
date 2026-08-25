@@ -1,0 +1,8 @@
+evidence_id,stage,environment,result,source
+005c-01,controlled cleanup implementation and static safety regression,Local Node.js,PASS,raw-results.txt
+005c-02,dynamic provider root cause fix and regression,Local Node.js,PASS,raw-results.txt
+005c-03,fixed identity preflight before final HTTP,DMS PostgreSQL,PASS CLEAN START,raw-results.txt
+005c-04,real HTTP persistence after fix,CloudBase 042,PASS,raw-results.txt
+005c-05,restore stable sqlite service,CloudBase 044,PASS,raw-results.txt
+005c-06,precise cleanup with advice evidence,DMS PostgreSQL,PASS TRUE ZERO RESIDUE,raw-results.txt
+005c-07,independent post-cleanup preflight,DMS PostgreSQL,PASS CLEAN,raw-results.txt

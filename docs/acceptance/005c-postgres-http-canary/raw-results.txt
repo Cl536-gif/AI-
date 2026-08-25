@@ -1,0 +1,64 @@
+005c PostgreSQL controlled HTTP canary acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git implementation batches]
+65a54db Add controlled PostgreSQL HTTP canary cleanup
+4803489 Resolve active user store per request
+branch_remote_sync=PASS
+
+[Local regression]
+controlled_cleanup_static_guard=PASS
+graph_persistence_lifecycle=PASS
+dynamic_provider_context_read=PASS
+dynamic_provider_advice_write=PASS
+provider_selection_gate=PASS
+async_http_identity_boundary=PASS
+complete_postgres_adapter_37_methods=PASS
+application_writes_sequential=PASS
+
+[Initial diagnosis]
+http_status=200
+identity_status=anonymous_resolved
+response_advice_persistence=recorded
+postgres_advice_evidence=false
+cleanup_remaining_identities=0
+cleanup_remaining_users=0
+cleanup_remaining_advice=0
+root_cause=default_graph_coordinator_cached_startup_sqlite_store
+
+[CloudBase 042 fixed canary]
+adapter=tencent-postgres
+declared_max_instances=1
+pool_max=1
+dynamic_provider_regression=PASS
+async_http_identity_boundary=PASS
+preflight_status=PASS
+preflight_fixed_identity_absent=true
+http_status=200
+identity_status=anonymous_resolved
+response_advice_persistence=recorded
+
+[CloudBase 044 restore]
+adapter=sqlite
+health_http_status=200
+restore_status=PASS
+
+[DMS precise cleanup]
+cleanup_status=PASS
+postgres_advice_evidence=true
+remaining_identities=0
+remaining_users=0
+remaining_advice=0
+
+[DMS final independent preflight]
+preflight_status=PASS
+cleanup_tables_present=true
+fixed_test_identity_absent=true
+matching_identity_count=0
+
+[Release boundary]
+real_user_data_migrated=false
+database_schema_changed=false
+dual_write_enabled=false
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false
