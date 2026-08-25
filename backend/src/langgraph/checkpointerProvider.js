@@ -7,6 +7,7 @@ const {
 const MEMORY_CHECKPOINTER = 'memory';
 const POSTGRES_CHECKPOINTER = 'postgres';
 const POSTGRES_CHECKPOINTER_CONFIRMATION = 'postgres-shared-checkpointer';
+const POSTGRES_CHECKPOINTER_CANARY_MODE = 'single_instance_canary';
 
 function createCheckpointerError(code, message) {
   const error = new Error(message);
@@ -48,10 +49,25 @@ function resolveLangGraphCheckpointerPolicy({ env = process.env } = {}) {
         '共享PostgreSQL checkpointer schema版本未确认或不匹配'
       );
     }
+    const mode = normalize(env.LANGGRAPH_CHECKPOINTER_MODE);
+    if (mode !== POSTGRES_CHECKPOINTER_CANARY_MODE) {
+      throw createCheckpointerError(
+        'LANGGRAPH_CHECKPOINTER_MODE_REQUIRED',
+        '共享PostgreSQL checkpointer首次验证必须使用单实例canary模式'
+      );
+    }
+    if (String(env.LANGGRAPH_CHECKPOINTER_MAX_INSTANCES || '').trim() !== '1') {
+      throw createCheckpointerError(
+        'LANGGRAPH_CHECKPOINTER_SCOPE_INVALID',
+        '共享PostgreSQL checkpointer首次验证必须声明实例上限为1'
+      );
+    }
     return Object.freeze({
       backend,
       userStoreAdapter,
       schemaVersion: POSTGRES_CHECKPOINTER_VERSION,
+      mode,
+      maxInstances: 1,
       shared: true,
       productionReady: false,
     });
@@ -117,6 +133,7 @@ module.exports = {
   MEMORY_CHECKPOINTER,
   POSTGRES_CHECKPOINTER,
   POSTGRES_CHECKPOINTER_CONFIRMATION,
+  POSTGRES_CHECKPOINTER_CANARY_MODE,
   resolveLangGraphCheckpointerPolicy,
   createLangGraphCheckpointer,
 };

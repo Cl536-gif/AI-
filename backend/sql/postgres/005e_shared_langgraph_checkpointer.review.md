@@ -17,8 +17,20 @@
 3. 应用运行时禁止调用`saver.setup()`。建表与版本记录必须由DMS迁移使用所有者权限完成，`diet_app`只获得运行所需DML权限。
 4. 数据库内部`thread_id`不直接使用客户端值，而是对“版本、服务端身份、公开threadId”执行HMAC-SHA256。相同身份可跨实例续接，不同身份即使提交相同公开threadId也映射到不同内部键。
 5. HMAC密钥必须独立于数据库和模型密钥，长度至少32；不得记录进日志、验收归档或仓库。
-6. 启用共享backend还必须同时给出固定非秘密确认词和schema版本`1.0.4`；缺失或不匹配时在启动阶段失败关闭。
-7. 当前`package.json`与锁文件含其他未归档修改，本批不触碰它们；依赖安装必须在能精确分离提交时完成。
+6. 启用共享backend还必须同时给出固定非秘密确认词、schema版本`1.0.4`、`single_instance_canary`模式和实例上限1；缺失或不匹配时在启动阶段失败关闭。
+7. 双实例只允许在下一批专门验证器与明确拓扑复核后开放，不能通过把实例上限变量直接改成2绕过门禁。
+8. 当前`package.json`与锁文件含其他未归档修改，本批不触碰它们；依赖安装必须在能精确分离提交时完成。
+
+## 云端验证顺序
+
+1. 在DMS评审并执行`005e_langgraph_checkpointer_schema.review.sql`，预期最终结果为`PASS,true,true,0,0`。
+2. 新建单实例CloudBase修订，保持`USER_STORE_ADAPTER=sqlite`，连接池上限1；配置共享backend确认词、schema版本、单实例模式、实例上限1和独立HMAC密钥。密钥不得出现在命令历史、截图或验收文件。
+3. 在Webshell依次运行三个独立进程：
+   - `RUN_005E_SHARED_CHECKPOINTER_VERIFY=CONFIRMED_005E_SHARED_CHECKPOINTER_CLOUD node manual-test-langgraph-postgres-shared-cloud.js seed`
+   - `RUN_005E_SHARED_CHECKPOINTER_VERIFY=CONFIRMED_005E_SHARED_CHECKPOINTER_CLOUD node manual-test-langgraph-postgres-shared-cloud.js resume`
+   - `RUN_005E_SHARED_CHECKPOINTER_VERIFY=CONFIRMED_005E_SHARED_CHECKPOINTER_CLOUD node manual-test-langgraph-postgres-shared-cloud.js cleanup`
+4. seed必须得到count 2；resume在不同processPid中读取旧状态并得到count 4，且跨身份不可见；cleanup必须证明remainingRows 0。
+5. resume失败也必须执行cleanup；无法证明零残留时不得继续扩大实例数。
 
 ## 为什么本批不直接安装 PostgreSQL saver
 
