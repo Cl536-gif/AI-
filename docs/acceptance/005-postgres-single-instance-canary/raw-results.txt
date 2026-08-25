@@ -1,0 +1,62 @@
+005 PostgreSQL single-instance canary acceptance results
+Date: 2026-08-25 Asia/Shanghai
+
+[Git implementation batches]
+b05790c Add PostgreSQL single-instance cutover gate
+5dd5966 Add PostgreSQL canary rollback verifier
+branch_remote_sync=PASS
+
+[Local regression]
+cutover_gate=PASS
+provider_selection=PASS
+capability_inventory_37_of_37=PASS
+complete_postgres_adapter=PASS
+application_writes_sequential=PASS
+graph_persistence=PASS
+async_http_identity_boundary=PASS
+full_cutover_ready=false
+
+[CloudBase 037 SQLite regression]
+user_store_adapter=sqlite
+cutover_gate=PASS
+provider_selection=PASS
+capability_inventory=PASS
+complete_postgres_adapter=PASS
+application_writes_sequential=PASS
+async_http_identity_boundary=PASS
+health_http_status=200
+postgres_readiness_http_status=200
+
+[CloudBase 038 verifier package]
+user_store_adapter=sqlite
+canary_environment_guard=PASS
+cutover_gate=PASS
+canary_script_packaged=true
+
+[CloudBase 039 PostgreSQL single-instance rollback sandbox]
+adapter=tencent-postgres
+declared_max_instances=1
+pool_max=1
+provider_and_cutover_gate=PASS
+database_identity_and_readiness=PASS
+identity_activity_and_settings=PASS
+profile_write_and_read=PASS
+advice_write_and_read=PASS
+transaction_rollback=PASS
+cleanup_proven=PASS
+check_count=7
+overall_status=PASS
+
+[Restore CloudBase 038]
+adapter=sqlite
+pool_max=5
+health_http_status=200
+restore_status=PASS
+
+[Release boundary]
+real_chat_traffic_sent=false
+real_user_data_migrated=false
+database_schema_changed=false
+dual_write_enabled=false
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false

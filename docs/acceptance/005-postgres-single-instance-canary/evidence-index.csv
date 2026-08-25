@@ -1,0 +1,6 @@
+evidence_id,stage,environment,result,source
+005-01,cutover gate implementation and local regression,Local Node.js,PASS,raw-results.txt
+005-02,sqlite default route and gate regression,CloudBase 037,PASS,raw-results.txt
+005-03,canary verifier packaging and guard,CloudBase 038,PASS,raw-results.txt
+005-04,postgres single instance rollback sandbox,CloudBase 039,PASS 7 CHECKS CLEANUP PASS,raw-results.txt
+005-05,restore sqlite stable revision,CloudBase 038,PASS,raw-results.txt
