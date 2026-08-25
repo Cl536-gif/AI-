@@ -61,6 +61,8 @@ async function main() {
     temporalContext: makeContext().temporalContext,
   });
   assert(timeOnlyMessage?.content.includes('星期五'), '没有档案时仍应提供确定性当前时间');
+  assert(timeOnlyMessage.content.includes('没有任何已确认档案'), '空档案上下文没有明确禁止伪记忆');
+  assert(!timeOnlyMessage.content.includes('这是已经建立过档案'), '空档案被错误标记为回访用户');
 
   const message = buildFollowUpContextMessage(makeContext());
   assert(message?.role === 'system', '长期上下文没有生成独立系统消息');

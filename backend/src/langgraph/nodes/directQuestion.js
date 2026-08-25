@@ -116,7 +116,7 @@ async function answerDirectQuestion(state, { chatModel = model } = {}) {
           }]
         : []),
     ]);
-    issues = detectDirectAnswerIssues(questionText, response.content);
+    issues = detectDirectAnswerIssues(questionText, response.content, state.longTermContext);
     if (issues.length === 0) break;
   }
 
@@ -140,7 +140,7 @@ function stripRepeatedWelcome(value, shouldStrip) {
     .trim();
 }
 
-function detectDirectAnswerIssues(questionText, answerText) {
+function detectDirectAnswerIssues(questionText, answerText, longTermContext = null) {
   const question = String(questionText || '');
   const answer = String(answerText || '');
   const issues = [];
@@ -160,6 +160,16 @@ function detectDirectAnswerIssues(questionText, answerText) {
   }
   if (/(鸡蛋|水煮蛋|蒸蛋|鸡腿|豆腐)[^。！？\n]{0,12}(?:半?拳|一拳)|(?:半?拳|一拳)[^。！？\n]{0,12}(鸡蛋|水煮蛋|蒸蛋|鸡腿|豆腐)/.test(answer)) {
     issues.push('蛋、鸡腿或豆腐使用了错误的拳头单位');
+  }
+  const hasKnownProfile = Boolean(longTermContext?.profile?.profile);
+  const hasKnownHistory = Boolean(
+    (longTermContext?.recentAdvice || []).length ||
+    longTermContext?.activePlan ||
+    longTermContext?.pausedPlan
+  );
+  if (!hasKnownProfile && !hasKnownHistory &&
+      /(?:老底子|按你(?:之前|原来|平时|一直)[^。！？\n]{0,16}(?:口味|预算|习惯|档案|记录)|之前的档案|你平时(?:主要)?(?:吃|点|不吃|喜欢))/.test(answer)) {
+    issues.push('没有档案或历史时编造了用户习惯');
   }
   return issues;
 }

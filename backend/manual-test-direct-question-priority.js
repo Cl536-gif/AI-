@@ -80,6 +80,33 @@ async function main() {
     []
   );
   assert.ok(detectDirectAnswerIssues('我怎么吃？', '豆腐吃一拳。那我接着问你预算？').length >= 2);
+  assert.ok(
+    detectDirectAnswerIssues(
+      '今天午餐怎么吃？',
+      '按你之前食堂自选的老底子来搭配。',
+      { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] }
+    ).includes('没有档案或历史时编造了用户习惯')
+  );
+
+  let emptyContextAttempts = 0;
+  const emptyContextAnswer = await answerDirectQuestion(
+    {
+      directQuestion: '今天午餐怎么吃？',
+      longTermContext: { accessMode: 'basic_profile_only', profile: null, recentAdvice: [] },
+    },
+    {
+      chatModel: {
+        async invoke() {
+          emptyContextAttempts += 1;
+          return emptyContextAttempts === 1
+            ? { content: '按你之前食堂自选的老底子来搭配。' }
+            : { content: '如果还没确定就餐场景，午餐先选一份主食、一份蛋白质和一份蔬菜。' };
+        },
+      },
+    }
+  );
+  assert.equal(emptyContextAttempts, 2, '空档案伪记忆没有触发重试');
+  assert.doesNotMatch(emptyContextAnswer.messages[0].content, /老底子|之前食堂/);
   assert.equal(stripTrailingCollectionQuestion('先正常吃饭。那我接着问你预算？'), '先正常吃饭。');
   assert.equal(stripRepeatedWelcome('宝子回来啦～今天中午正常吃饭。', true), '今天中午正常吃饭。');
 

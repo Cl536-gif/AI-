@@ -95,6 +95,15 @@ function buildFollowUpContextMessage(longTermContext) {
   if (!longTermContext) return null;
 
   const hasLongTermAccess = longTermContext.accessMode === 'long_term';
+  const hasPersistedProfile = Boolean(longTermContext.profile?.profile);
+  const hasEstablishedContext = Boolean(
+    hasPersistedProfile ||
+    longTermContext.activePlan ||
+    longTermContext.pausedPlan ||
+    longTermContext.latestEnergyCalculation ||
+    (longTermContext.recentAdvice || []).length ||
+    (longTermContext.recentEvents || []).length
+  );
 
   const compactContext = {
     serviceStatus: longTermContext.serviceStatus || 'free',
@@ -114,7 +123,9 @@ function buildFollowUpContextMessage(longTermContext) {
     content:
       '以下是业务层按当前权限提供的用户上下文摘要，仅在与用户本轮问题直接相关时使用：\n' +
       serialized + '\n' +
-      '这是已经建立过档案的用户：不要再次发送首次自我介绍，不要重新询问摘要中已有的基础资料。' +
+      (hasEstablishedContext
+        ? '这是已经建立过档案或留下过有效历史的用户：不要再次发送首次自我介绍，不要重新询问摘要中已有的基础资料。'
+        : '当前没有任何已确认档案或历史建议：不得声称记得用户，不得编造口味、预算、就餐方式、忌口、目标或运动习惯，不得使用“老底子”“之前的档案”等伪记忆表达。') +
       '回答要求：先直接回答本轮问题；不要主动复述整份档案、计算过程或内部字段；' +
       '如果引用摘要里的历史档案，必须明确说“之前的档案里记录过”，禁止说成“你刚才提到”或冒充本轮用户原话；' +
       '不要声称摘要中没有的事实；近期事件按新到旧排列；除非用户明确询问，否则不要主动提及经期或具体热量数字；' +
