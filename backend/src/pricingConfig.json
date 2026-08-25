@@ -1,0 +1,8 @@
+{
+  "pushService": {
+    "trialDays": 14,
+    "billingCycleDays": 14,
+    "priceCny": 19.9,
+    "currency": "CNY"
+  }
+}

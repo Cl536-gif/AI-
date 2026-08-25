@@ -2,10 +2,19 @@ const {
   parseExplicitBodyUnits,
   findImplausibleBodyValue,
   mergeBodyProfileForTurn,
+  sanitizeBodyExtractionByEvidence,
 } = require('../nodes/resolveBodyOnboarding');
-const { normalizeMealTimingClosing, MEAL_TIMING_CLOSING, BODY_ONBOARDING_QUESTION } = require('../nodes/generatePlan');
+const {
+  normalizeMealTimingClosing,
+  hasConcreteMealPlanContent,
+  MEAL_TIMING_CLOSING,
+  BODY_ONBOARDING_QUESTION,
+} = require('../nodes/generatePlan');
 const { formatLongReplyForReadability } = require('../../routes/chatLanggraph');
 const { answerFollowUp } = require('../nodes/answerFollowUp');
+const { detectFormatViolations } = require('../../services/formatGuard');
+const { detectUnconfirmedSlotAssertions } = require('../nodes/askNextQuestion');
+const { extractExplicitCycleDates, mergeCycleProfile, cycleProfileNeedsMore } = require('../nodes/resolveCycleOnboarding');
 
 async function main() {
   const body = parseExplicitBodyUnits('20kg, 165cm 22岁');
@@ -15,6 +24,18 @@ async function main() {
   if (!findImplausibleBodyValue(body)?.includes('20公斤')) {
     throw new Error('极低体重没有进入明确确认流程');
   }
+  const hallucinatedActivity = sanitizeBodyExtractionByEvidence(
+    { ageYears: 22, heightCm: 165, currentWeightKg: 20, dailyActivity: '久坐' },
+    '20kg, 165cm 22岁'
+  );
+  if (hallucinatedActivity.dailyActivity) {
+    throw new Error('用户没有提供活动量时，模型补出的活动量没有被清除');
+  }
+  const explicitActivity = sanitizeBodyExtractionByEvidence(
+    { dailyActivity: '上课久坐为主' },
+    '平时上课久坐比较多'
+  );
+  if (!explicitActivity.dailyActivity) throw new Error('用户明确提供的活动量被错误清除');
   const spacedUnit = parseExplicitBodyUnits('20k g, 165c m，年龄22');
   if (spacedUnit.currentWeightKg !== 20 || spacedUnit.heightCm !== 165 || spacedUnit.ageYears !== 22) {
     throw new Error(`单位字母带空格时识别错误: ${JSON.stringify(spacedUnit)}`);
@@ -50,13 +71,60 @@ async function main() {
   if (closing.includes('中午还是晚上') || !closing.includes(MEAL_TIMING_CLOSING)) {
     throw new Error(`餐次结尾兜底失败: ${closing}`);
   }
+  const duplicateBreakfast = normalizeMealTimingClosing('先吃一拳米饭。想安排早餐的话随时告诉我哈～');
+  if ((duplicateBreakfast.match(/早餐/g) || []).length !== 2 || duplicateBreakfast.includes('随时告诉我')) {
+    throw new Error(`早餐提示没有去重: ${duplicateBreakfast}`);
+  }
+  if (hasConcreteMealPlanContent('接下来想确认年龄和体重。这份搭配适合午餐或晚餐。')) {
+    throw new Error('只有建档问题和方案结尾的回复被误判为完整方案');
+  }
+  if (!hasConcreteMealPlanContent('主食打一拳杂粮饭，蛋白质选一掌鸡腿肉，再配一份清炒青菜。')) {
+    throw new Error('包含食物类别和生活化分量的正常方案被误判为缺失');
+  }
+  const mixedDishViolations = detectFormatViolations('小炒肉吃一拳大小，大概3-4片，再配一拳米饭。');
+  if (!mixedDishViolations.some((item) => item.type === 'fixed_piece_count_for_mixed_dish')) {
+    throw new Error('混合炒菜使用数字范围限定片数时没有被拦截');
+  }
+
+  const fabricatedExercise = detectUnconfirmedSlotAssertions(
+    '好，记下了：食堂自己打饭、喜欢小炒肉和甜味、暂不运动、目标是减脂。还差预算这一项。',
+    {
+      scene: { value: '食堂', confirmed: true },
+      taste: { value: '小炒肉、甜味', confirmed: true },
+      goal: { value: '减脂', confirmed: true },
+      exercise: { value: null, confirmed: false },
+    }
+  );
+  if (!fabricatedExercise.some((item) => item.type === 'asserts_unconfirmed_slot')) {
+    throw new Error('未回答运动时，摘要编造“暂不运动”没有被拦截');
+  }
+  const exerciseQuestionExample = detectUnconfirmedSlotAssertions(
+    '最后了解一下活动情况：目前没运动也可以直接说，你平时会做哪些运动呀？',
+    { exercise: { value: null, confirmed: false } }
+  );
+  if (exerciseQuestionExample.length > 0) {
+    throw new Error(`问题里的举例被误判为已确认事实: ${JSON.stringify(exerciseQuestionExample)}`);
+  }
+  const firstCycleTurn = mergeCycleProfile(
+    {},
+    { regularity: 'unknown', startDates: extractExplicitCycleDates('8月4号来的三个月'), typicalCycleDays: null, symptoms: [] },
+    '8月4号来的三个月'
+  );
+  const secondCycleTurn = mergeCycleProfile(
+    firstCycleTurn,
+    { regularity: 'irregular', startDates: extractExplicitCycleDates('不规律，前一次大约5月4日'), typicalCycleDays: null, symptoms: [] },
+    '不规律，前一次大约5月4日'
+  );
+  if (secondCycleTurn.startDates.length !== 2 || cycleProfileNeedsMore(secondCycleTurn)) {
+    throw new Error(`分两轮提供的经期日期没有正确累积: ${JSON.stringify(secondCycleTurn)}`);
+  }
 
   const formatted = formatLongReplyForReadability('第一句话用于说明需要填写的数据。第二句话继续解释为什么要填写这些信息并确保内容足够长。第三句话补充用户可以使用自己熟悉的单位。第四句话说明后台会统一进行单位换算避免计算错误。第五句话继续补充活动量和目标体重属于可选信息。第六句话提醒用户无需自己计算任何内容。第七句话说明记录会用于后续阶段性评估。第八句话提醒数值变化后可以重新告诉秘书更新。第九句话说明所有计算结果都会结合实际饮食情况进行复核。');
   if (!formatted.includes('\n\n')) throw new Error('长回复没有自动分段');
 
   const followUp = await answerFollowUp({ messages: [{ role: 'human', content: '好的' }] });
   const followUpText = followUp.messages[0].content;
-  if (!followUpText.includes('先按上面的饮食搭配') || /年龄|身高|体重|月经/.test(followUpText)) {
+  if (!followUpText.includes('新的饮食情况') || /按上面的饮食搭配|年龄|身高|体重|月经/.test(followUpText)) {
     throw new Error(`简单确认后仍重复档案: ${followUpText}`);
   }
 
@@ -64,6 +132,8 @@ async function main() {
   console.log('✅ 可疑身体数据不会静默丢弃，会进入确认流程');
   console.log('✅ 午晚餐不再追问，早餐明确另给方案');
   console.log('✅ 长文本自动分段，简单确认不再重复用户档案与完整方案');
+  console.log('✅ 未确认字段不会被提前写进“已记录”摘要，问题里的示例不误伤');
+  console.log('✅ 分多轮提供的经期日期会累积，“来了三个月”不会被当成周期长度');
 }
 
 main().catch((err) => {

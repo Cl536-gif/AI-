@@ -79,7 +79,7 @@ function stripLeadingParenthetical(text) {
 // 边界，以后如果观察到有正常方案被误判成"缺失"，可以直接调高这个
 // 数字，不用重新推导。
 const MIN_PLAN_LENGTH = 20;
-const NO_PLAN_FALLBACK_TEXT = '这顿的具体搭配我再想想，你先说说刚才这几项信息有没有需要补充的～';
+const NO_PLAN_FALLBACK_TEXT = '这次具体的餐食搭配没有生成完整，我不会把它当成已经给过的方案。请回复“重新生成方案”，我会重新给你一份完整搭配。';
 const MEAL_TIMING_CLOSING =
   '这份搭配适合午餐或晚餐；如果想安排早餐，告诉我，我会另外给你早餐方案～';
 
@@ -95,7 +95,27 @@ function normalizeMealTimingClosing(text) {
   if (/适合(?:午餐|中餐)(?:或|和)(?:晚餐|晚饭)/.test(withoutQuestion) && /早餐/.test(withoutQuestion)) {
     return withoutQuestion;
   }
-  return `${withoutQuestion}\n\n${MEAL_TIMING_CLOSING}`.trim();
+  const withoutDuplicateBreakfastPrompt = withoutQuestion
+    .replace(/[^。！？\n]*早餐[^。！？\n]*[。！？～~]?/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return `${withoutDuplicateBreakfastPrompt}\n\n${MEAL_TIMING_CLOSING}`.trim();
+}
+
+function hasConcreteMealPlanContent(text) {
+  const value = String(text || '').trim();
+  if (value.length < MIN_PLAN_LENGTH) return false;
+
+  const portionHits = value.match(
+    /(?:半|一|两|二|三|四|五|六|七|八|九|十|\d+)(?:拳|掌|碗|份|个|块|勺|小把)|适量|普通一份/g
+  ) || [];
+  const foodGroups = [
+    /米饭|杂粮|馒头|花卷|面条|米线|粉|粥|玉米|红薯|主食/,
+    /肉|鸡|鱼|虾|蛋|豆腐|豆制品|蛋白质/,
+    /蔬菜|青菜|绿叶菜|西兰花|黄瓜|番茄|菌菇|时蔬|包菜/,
+  ];
+  const matchedFoodGroups = foodGroups.filter((pattern) => pattern.test(value)).length;
+  return portionHits.length >= 2 && matchedFoodGroups >= 2;
 }
 const BODY_ONBOARDING_QUESTION =
   '接下来再了解几项基础信息，我会用来帮你把饮食安排得更贴合：\n\n' +
@@ -111,7 +131,8 @@ const CYCLE_ONBOARDING_QUESTION =
   '2. 最近一次月经开始日期\n' +
   '3. 如果记得，前两次大概什么时候开始\n' +
   '4. 经期前后是否容易饿、疲劳、腹胀或疼痛\n\n' +
-  '有月经的话，按你记得的告诉我就好；没有月经或暂时不方便提供，也直接跟我说。' +
+  '按你记得的告诉我就好；如果目前没有月经或暂时不方便提供，也请直接说明。' +
+  '这项完成前不会启动长期方案或14天试用。' +
   '后面我会结合你的周期和实际状态，适当调整饮食，帮助你应对容易饿、疲劳或腹胀这些变化。';
 
 async function generatePlan(state) {
@@ -183,30 +204,40 @@ async function generatePlan(state) {
     .filter((m) => getMessageRole(m) === 'human')
     .map((m) => getMessageText(m));
 
-  const { text: rawReplyText } = await generateWithFormatGuard({
-    userMessages,
-    generate: async (retryInstruction) => {
+  async function generateRawPlan(contentRetryInstruction = null) {
+    const { text } = await generateWithFormatGuard({
+      userMessages,
+      generate: async (retryInstruction) => {
       const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'system', content: taskInstruction },
+        ...(contentRetryInstruction ? [{ role: 'system', content: contentRetryInstruction }] : []),
         ...(retryInstruction ? [{ role: 'system', content: `【重新生成要求】${retryInstruction}` }] : []),
-        ...state.messages,
       ];
       const response = await model.invoke(messages);
       return response.content;
-    },
-  });
+      },
+    });
+    return state.pendingServiceAck
+      ? stripLeadingParenthetical(stripDuplicateScheduleAck(text, state.pushSchedule))
+      : text;
+  }
 
   // 指令层面已经要求LLM不要重复呼应订阅时间、也不要评论推送机制，但
   // 真实测试发现它偶尔还是会不听——这里再做两层确定性兜底，具体逻辑
   // 见 stripDuplicateScheduleAck / stripLeadingParenthetical 的注释。
-  const strippedReplyText = state.pendingServiceAck
-    ? stripLeadingParenthetical(stripDuplicateScheduleAck(rawReplyText, state.pushSchedule))
-    : rawReplyText;
+  let strippedReplyText = await generateRawPlan();
+  if (!hasConcreteMealPlanContent(strippedReplyText)) {
+    strippedReplyText = await generateRawPlan(
+      '【内容缺失重试】上一次回复没有真正给出完整餐食搭配。必须重新生成具体方案：' +
+      '至少包含主食、蛋白质菜和蔬菜中的两类以上，并为至少两项写明生活化分量。' +
+      '不要询问年龄、身高、体重、经期或提醒设置，也不要只写方案结尾。'
+    );
+  }
 
   // 不管走免费还是订阅分支，剥离完呼应/括号说明之后再统一做一次内容
   // 完整性兜底，具体逻辑和阈值依据见 MIN_PLAN_LENGTH 的注释。
-  const isPlanMissing = strippedReplyText.trim().length < MIN_PLAN_LENGTH;
+  const isPlanMissing = !hasConcreteMealPlanContent(strippedReplyText);
   const replyText = isPlanMissing
     ? NO_PLAN_FALLBACK_TEXT
     : normalizeMealTimingClosing(strippedReplyText);
@@ -224,6 +255,15 @@ async function generatePlan(state) {
   // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
   // 不含加粗/列表/emoji/排比句这些违规的可能）。
   const finalText = state.pendingServiceAck ? `${state.pendingServiceAck}\n\n${replyText}` : replyText;
+  if (isPlanMissing) {
+    return {
+      messages: [{ role: 'ai', content: finalText }],
+      retrieved: perKb,
+      initialPlanDelivered: false,
+      initialMealPlanText: null,
+      pendingServiceAck: null,
+    };
+  }
   const shouldAskBodyOnboarding =
     state.serviceTier === 'subscribed' && state.bodyOnboardingStatus === null;
 
@@ -246,6 +286,7 @@ async function generatePlan(state) {
     ],
     retrieved: perKb,
     initialPlanDelivered: true,
+    initialMealPlanText: replyText,
     // 不管这一轮有没有用上pendingServiceAck，都要显式重置回null——
     // generatePlan六项确认完之后每一轮都会再次被路由到（同一个serviceTier
     // 会一直复用），不重置的话下一轮会被误判成"又刚设定了一次"，重复
@@ -266,4 +307,5 @@ module.exports = {
   CYCLE_ONBOARDING_QUESTION,
   MEAL_TIMING_CLOSING,
   normalizeMealTimingClosing,
+  hasConcreteMealPlanContent,
 };

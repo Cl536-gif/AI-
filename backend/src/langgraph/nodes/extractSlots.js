@@ -90,6 +90,8 @@ const NO_RESTRICTION_REGEX = /^(没有|没有忌口|没忌口|不过敏|无|都�
 const PRODUCT_QUESTION_PART_REGEX = /(你)?(这里|这个|这些|饮食建议)?(需要|要)?(付费|收费|花钱)(吗|嘛|么)?|免费吗|多少钱/g;
 const VAGUE_RESTRICTION_ANSWER_REGEX = /^(不知道|不清楚|想不到|没有想好|随便)$/;
 const VAGUE_GOAL_ANSWER_REGEX = /^(不知道|不清楚|想不到|没有想好|没想好|没有|没什么|随便|都行)$/;
+const GENERIC_CONFIRMATION_ANSWER_REGEX = /^(?:是的?|对(?:的)?|嗯+|哦+|好(?:的)?|可以|没错|yes|yep|yeah)[呀啊哈呢吧嘛～~！!。.]?$/i;
+const EMOJI_ONLY_REGEX = /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji_Modifier}|\uFE0F|\u200D|\s)+$/u;
 const GOAL_NORMALIZATION_RULES = [
   { regex: /^(精气神|有精气神|更有精气神|精神点|更精神)$/, value: '希望更有精气神' },
   { regex: /^(不犯困|少犯困|没那么困|精力好|精力充沛)$/, value: '希望精力更稳定、不容易犯困' },
@@ -133,6 +135,14 @@ function normalizeGoalFromContext({ userText, lastAskedSlot, extractedValue }) {
 
 function normalizeTasteFromContext({ userText, lastAskedSlot, extractedValue }) {
   if (lastAskedSlot !== 'taste') return { value: extractedValue, reason: null };
+  const rawAnswer = String(userText || '')
+    .replace(/^[，,。！？!?；;：:\s]+|[，,。！？!?；;：:\s]+$/g, '')
+    .trim();
+  // “是的/对/emoji”只能回答一个明确的确认问题，不能本身成为口味值。
+  // 之前这里会把“是的”兜底成“喜欢是的”，污染后续长期档案。
+  if (GENERIC_CONFIRMATION_ANSWER_REGEX.test(rawAnswer) || EMOJI_ONLY_REGEX.test(rawAnswer)) {
+    return { value: null, reason: null };
+  }
   const dish = recognizeDish(userText);
   if (!dish) {
     if (extractedValue) return { value: extractedValue, reason: null };
@@ -162,6 +172,15 @@ function normalizeTasteFromContext({ userText, lastAskedSlot, extractedValue }) 
   // 菜名本身就是有效偏好，但没有足够稳定的口味标签时只记录喜欢该菜，
   // 不擅自推断清淡、酸甜或辛辣。
   return { value: `喜欢${dish.canonicalName}`, reason: null };
+}
+
+function normalizeExerciseFromContext({ userText, lastAskedSlot, extractedValue }) {
+  if (lastAskedSlot !== 'exercise') return extractedValue;
+  const answer = String(userText || '').trim();
+  if (/^(?:没有|没|无|不运动|没有运动|没运动|基本不动|不怎么运动)[。！!～~]?$/.test(answer)) {
+    return '目前没有运动';
+  }
+  return extractedValue;
 }
 
 // 真实测试里稳定复现过的错误：用户只回了某一项的"类别名称/话题词"本身
@@ -196,10 +215,22 @@ function isBareLabelEcho(key, value) {
 const BARE_NUMBER_REGEX = /^\d+(\.\d+)?$/;
 const CAFETERIA_SCENE_EVIDENCE_REGEX = /(食堂|饭堂|打饭|校内(?:吃饭|就餐)|学校(?:里|内)(?:吃饭|就餐))/;
 const TAKEOUT_SCENE_EVIDENCE_REGEX = /(外卖|点餐|叫餐|送餐)/;
+const BOTH_SCENES_CONTEXT_ANSWER_REGEX = /^(?:两个|两种|这两个)?都(?:吃|有|可以|行)|^(?:换着|混着|穿插着|交替着)吃|^(?:食堂|饭堂)(?:和|跟|、)?外卖(?:都)?(?:吃|有)|^外卖(?:和|跟|、)?(?:食堂|饭堂)(?:都)?(?:吃|有)/;
+
+function normalizeSceneFromContext({ userText, lastAskedSlot, extractedValue }) {
+  const answer = String(userText || '')
+    .replace(/^[，,。！？!?；;：:\s]+|[，,。！？!?；;：:\s]+$/g, '')
+    .trim();
+  if (lastAskedSlot === 'scene' && BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(answer)) {
+    return '食堂和外卖都会吃';
+  }
+  return extractedValue;
+}
 
 function isUnsupportedSceneGuess(key, candidateValue, userText, lastAskedSlot) {
   if (key !== 'scene') return false;
   const text = userText.trim();
+  if (lastAskedSlot === 'scene' && BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(text)) return false;
   if (candidateValue.includes('食堂')) {
     if (CAFETERIA_SCENE_EVIDENCE_REGEX.test(text)) return false;
     if (lastAskedSlot === 'scene' && /^(学校|校内|学校吃|在学校吃)[。！!～~]?$/.test(text)) return false;
@@ -215,6 +246,45 @@ function isUnsupportedBareNumberBudgetGuess(key, userText, lastAskedSlot) {
   if (key !== 'budget') return false;
   if (lastAskedSlot === 'budget') return false; // 上一轮就是在问预算，这是合理语境
   return BARE_NUMBER_REGEX.test(userText.trim());
+}
+
+// 模型在长句同时包含多项资料时，偶尔会漏掉非常明确的“没有忌口”或
+// “每周跑步两次”。这些表达不需要语义推断，用确定性规则补齐；只在
+// 模型没有给出该字段时生效，不覆盖模型已经抽取出的更完整内容。
+function applyDeterministicExplicitCandidates(extracted, userText) {
+  const result = { ...extracted };
+  const text = String(userText || '').trim();
+
+  if (/(食堂|饭堂)/.test(text)) result.scene = '食堂';
+  else if (/(点外卖|叫外卖|外卖)/.test(text)) result.scene = '外卖';
+
+  if (/(食堂|饭堂)[^。！？\n]{0,15}(?:自选|自己挑|自由选)/.test(text)) result.cafeteriaMode = '自己挑菜';
+  else if (/(食堂|饭堂)[^。！？\n]{0,15}(?:固定套餐|配好的套餐)/.test(text)) result.cafeteriaMode = '固定套餐';
+
+  const budget = text.match(/(?:每顿|一顿|预算)[^。！？\n]{0,8}?(\d+(?:\.\d+)?)\s*(元|块钱|块)/);
+  if (budget) result.budget = `每顿${budget[1]}元`;
+
+  if (/(?:没有|没|无)(?:任何|什么|已知)?(?:忌口|过敏)/.test(text)) {
+    result.restrictions = '没有忌口或已知过敏';
+  } else {
+    const restriction = text.match(/(?:不吃|不喝|对[^，,。！？\n]{1,12}过敏|吃[^，,。！？\n]{1,12}(?:会|就)(?:腹泻|拉肚子|腹胀|发痒|起疹))/);
+    if (restriction) result.restrictions = restriction[0];
+  }
+
+  const goal = text.match(/(?:目标(?:是|想)?|想要?|希望)?\s*(减脂|减肥|塑形|增肌|马甲线|腹肌|薄肌身材|更上镜)/);
+  if (goal) result.goal = goal[1];
+
+  if (/(?:不运动|没(?:有)?运动|基本不动)/.test(text)) {
+    result.exercise = '目前不运动';
+  } else {
+    const exercise = text.match(/(?:每周|一周)[^，,。！？\n]{0,20}(?:跑步|健身|力量训练|打球|攀岩|游泳|骑车|瑜伽|普拉提)[^，,。！？\n]{0,20}/);
+    if (exercise) result.exercise = exercise[0].trim();
+  }
+
+  const taste = text.match(/(?:喜欢吃?|爱吃|偏爱|偏好)([^，,。！？\n]{1,24})/);
+  if (taste) result.taste = `喜欢${taste[1].trim()}`;
+
+  return result;
 }
 
 function formatKnownSlots(slots) {
@@ -236,6 +306,13 @@ async function extractSlots(state) {
 
   if (!userText.trim()) {
     return { candidateSlots: {} };
+  }
+
+  // 饮食采集问题目前没有向用户展示“1/2”编号选项。孤立数字只有在上一轮
+  // 明确询问预算时才有可靠含义；其余场景不能擅自把“1”猜成食堂、自选、
+  // 某种口味等，否则同一个数字会随节点变化悄悄改写档案。
+  if (BARE_NUMBER_REGEX.test(userText.trim()) && state.lastAskedSlot !== 'budget') {
+    return { candidateSlots: {}, candidateConfirmationReasons: {}, skipCandidateFieldsOnce: [] };
   }
 
   const currentFocusLabel = state.lastAskedSlot
@@ -295,7 +372,13 @@ async function extractSlots(state) {
     { role: 'human', content: userText },
   ];
 
-  const extracted = await structuredModel.invoke(prompt);
+  let extracted = await structuredModel.invoke(prompt);
+  extracted = applyDeterministicExplicitCandidates(extracted, userText);
+  extracted.scene = normalizeSceneFromContext({
+    userText,
+    lastAskedSlot: state.lastAskedSlot,
+    extractedValue: extracted.scene,
+  });
   extracted.restrictions = normalizeRestrictionFromContext({
     userText,
     lastAskedSlot: state.lastAskedSlot,
@@ -305,6 +388,11 @@ async function extractSlots(state) {
     userText,
     lastAskedSlot: state.lastAskedSlot,
     extractedValue: extracted.goal,
+  });
+  extracted.exercise = normalizeExerciseFromContext({
+    userText,
+    lastAskedSlot: state.lastAskedSlot,
+    extractedValue: extracted.exercise,
   });
   const normalizedTaste = normalizeTasteFromContext({
     userText,
@@ -352,7 +440,20 @@ async function extractSlots(state) {
     console.log('[extractSlots] 抽取到的候选值:', JSON.stringify(candidateSlots));
   }
 
-  return { candidateSlots, candidateConfirmationReasons, skipCandidateFieldsOnce: [] };
+  const repeatedInfoApology = /我都说了|已经说了|说过了/.test(userText) &&
+    candidateSlots.exercise === '目前没有运动'
+    ? [{
+        role: 'ai',
+        content: '哦哦，不好意思，是我走神了，下次注意。已经记下你目前没有运动，我们继续哈。',
+      }]
+    : [];
+
+  return {
+    messages: repeatedInfoApology,
+    candidateSlots,
+    candidateConfirmationReasons,
+    skipCandidateFieldsOnce: [],
+  };
 }
 
 module.exports = {
@@ -361,5 +462,8 @@ module.exports = {
   normalizeRestrictionFromContext,
   normalizeGoalFromContext,
   normalizeTasteFromContext,
+  normalizeExerciseFromContext,
   isUnsupportedSceneGuess,
+  applyDeterministicExplicitCandidates,
+  normalizeSceneFromContext,
 };

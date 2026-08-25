@@ -123,7 +123,7 @@ function stripTasteValue(value) {
     .trim();
 }
 
-async function resolvePendingConfirmation(state) {
+async function resolvePendingConfirmation(state, { resolver = structuredResolver } = {}) {
   const pending = state.pendingConfirmation;
   const isFirstTimeSurprise = pending.oldValue === null;
   const lastUserMessage = findLastUserMessage(state.messages);
@@ -145,7 +145,8 @@ async function resolvePendingConfirmation(state) {
   }
 
   function advanceConfirmation(extra = {}) {
-    const [nextPending, ...remaining] = confirmationQueue;
+    const withoutSameField = confirmationQueue.filter((item) => item.field !== pending.field);
+    const [nextPending, ...remaining] = withoutSameField;
     return {
       ...extra,
       pendingConfirmation: nextPending || null,
@@ -170,11 +171,12 @@ async function resolvePendingConfirmation(state) {
     { role: 'human', content: userText },
   ];
 
-  const { resolution } = await structuredResolver.invoke(prompt);
+  const { resolution } = await resolver.invoke(prompt);
 
   if (resolution === 'confirmed') {
     return advanceConfirmation({
       slots: { [pending.field]: { value: pending.newValue, confirmed: true } },
+      skipCandidateFieldsOnce: [pending.field],
     });
   }
 
@@ -191,6 +193,7 @@ async function resolvePendingConfirmation(state) {
   if (resolution === 'rejected') {
     return advanceConfirmation({
       slots: { [pending.field]: revertSlot() },
+      skipCandidateFieldsOnce: [pending.field],
     });
   }
 
@@ -204,6 +207,7 @@ async function resolvePendingConfirmation(state) {
     }
     return advanceConfirmation({
       slots: { [pending.field]: revertSlot() },
+      skipCandidateFieldsOnce: [pending.field],
     });
   }
 

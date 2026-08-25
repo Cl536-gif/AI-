@@ -62,6 +62,20 @@ const TASTE_PROFILE_SCENE_TRANSITION =
   '如果想让我给出的搭配更符合你的口味，还需要先聊聊你平时的饮食习惯～' +
   '我们先从最基础的开始：你平时吃饭主要是食堂还是外卖呀？';
 
+const FALLBACK_SLOT_QUESTIONS = {
+  scene: '我们先了解一下日常吃饭的场景：你平时主要吃食堂还是点外卖呀？',
+  taste: '接着聊聊口味：你平时喜欢什么味道或哪些具体食物呀？',
+  budget: '预算会影响日常搭配，你一顿饭大概准备多少钱呀？',
+  restrictions: '饮食安全这项还需要了解一下：有没有不吃、过敏或吃了会不舒服的食物？',
+  goal: '我想了解一下你的目标：这次调整饮食最希望改善什么呀？',
+  exercise: '最后了解一下日常活动：你平时会做哪些运动，大概多久一次呀？',
+  cafeteriaMode: CAFETERIA_MODE_QUESTION,
+};
+
+function buildFallbackSlotQuestion(slotKey) {
+  return FALLBACK_SLOT_QUESTIONS[slotKey] || `关于“${SLOT_LABELS[slotKey]}”，方便再补充一点具体情况吗？`;
+}
+
 function normalizeFoodRejectionTransition(text, userText, nextSlot) {
   if (nextSlot !== 'scene' || !FOOD_REJECTION_REGEX.test(String(userText || ''))) return text;
   const value = String(text || '').trim();
@@ -235,13 +249,55 @@ function detectPrematurePlan(text) {
   return PREMATURE_PLAN_PATTERNS.filter((p) => p.regex.test(text)).map((p) => ({ type: p.type, detail: p.detail }));
 }
 
+// 模型有时会在自然承接的“记下啦”摘要里，顺手补出用户从未回答过的值。
+// 例如 exercise 仍为空时写成“暂不运动”。这比问错下一项更隐蔽：状态层
+// 没有真的保存假值，但用户已经被告知“系统记下了”，后续对话会自相矛盾。
+// 只检查带有“已记录/当前情况”语气的陈述句，避免把问题中的举例
+// （如“目前没运动也可以直接说”）误判成编造。
+const UNCONFIRMED_SLOT_ASSERTION_PATTERNS = {
+  scene: /(主要吃|平时吃|就餐场景[^，。；]*)(食堂|外卖|自己做饭)/,
+  cafeteriaMode: /(食堂[^，。；]{0,12})(自选|自己选菜|固定套餐)/,
+  taste: /(喜欢|爱吃|偏爱|口味)(?:[^，。；]{0,18})/,
+  budget: /(预算|一顿|每顿)[^，。；]{0,10}\d+(?:\.\d+)?\s*元/,
+  restrictions: /(没有忌口|无忌口|没有过敏|无过敏|没有不吃|什么都能吃)/,
+  goal: /(目标是|目标为|希望改善|想要达到|想减脂|想塑形|想增肌)/,
+  exercise: /(暂不运动|目前不运动|现在不运动|没有运动|不怎么运动|基本不运动|每周[^，。；]{0,16}(跑步|健身|攀岩|打球|游泳))/,
+};
+
+const RECORDED_ASSERTION_TONE_REGEX = /(记下|记录|收到|了解到|目前情况|当前情况|你的情况|信息是|档案|我知道了)/;
+
+function detectUnconfirmedSlotAssertions(text, slots = {}) {
+  const statements = String(text || '')
+    .split(/(?<=[。！!\n])/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !/[？?]/.test(part) && RECORDED_ASSERTION_TONE_REGEX.test(part));
+
+  const violations = [];
+  for (const [slotKey, pattern] of Object.entries(UNCONFIRMED_SLOT_ASSERTION_PATTERNS)) {
+    if (slots[slotKey]?.confirmed) continue;
+    const sentence = statements.find((part) => pattern.test(part));
+    if (sentence) {
+      violations.push({
+        type: 'asserts_unconfirmed_slot',
+        detail: `用户尚未确认“${SLOT_LABELS[slotKey]}”，回复却在已记录摘要里把它陈述成事实：${sentence}`,
+      });
+    }
+  }
+  return violations;
+}
+
 // 正则命中的几类是已经验证过的快速通道，不用等一次模型调用就能拦下来；
 // 但真实测试证明模型总能找到没被枚举到的新说法绕过去，所以这里加上
 // checkAsksTargetSlot 兜底——不管正则有没有命中，都再问一遍"这段话到底
 // 有没有实质问到目标字段"，这条判断跟具体措辞无关，理论上能覆盖所有
 // 未来可能出现的新规避方式，不用再靠不断新增正则去追。
-async function detectAskNextQuestionViolations(text, slotLabel, slotKey) {
-  const violations = [...detectPrematurePlan(text), ...detectCollectionVerbosity(text)];
+async function detectAskNextQuestionViolations(text, slotLabel, slotKey, slots = {}) {
+  const violations = [
+    ...detectPrematurePlan(text),
+    ...detectCollectionVerbosity(text),
+    ...detectUnconfirmedSlotAssertions(text, slots),
+  ];
   const asksTarget = await checkAsksTargetSlot(text, slotLabel, slotKey);
   if (!asksTarget) {
     violations.push({
@@ -308,24 +364,40 @@ async function askNextQuestion(state) {
 
   if (nextSlot === 'cafeteriaMode') {
     const resumeMessage = state.resumePreviousQuestion ? RESUME_PREVIOUS_QUESTION_MESSAGE : null;
+    const sceneValue = state.slots?.scene?.value || '';
+    const cafeteriaQuestion = sceneValue.includes('食堂') && sceneValue.includes('外卖')
+      ? `明白，平时食堂和外卖会穿插着吃，我记下了～${CAFETERIA_MODE_QUESTION}`
+      : CAFETERIA_MODE_QUESTION;
     return {
       messages: [
         resumeMessage,
         state.emotionalSupportDeliveredThisTurn
-          ? `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${CAFETERIA_MODE_QUESTION}`
-          : CAFETERIA_MODE_QUESTION,
+          ? `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${cafeteriaQuestion}`
+          : cafeteriaQuestion,
       ]
         .filter(Boolean)
         .map((content) => ({ role: 'ai', content })),
       lastAskedSlot: nextSlot,
       ...(resumeMessage ? { resumePreviousQuestion: false } : {}),
       ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+      ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
     };
   }
 
   const lastUserMessage = [...state.messages].reverse().find((m) => getMessageRole(m) === 'human');
   const lastUserText = lastUserMessage ? getMessageText(lastUserMessage) : '';
-  const fixedProductAnswer = getFixedProductAnswer(lastUserText);
+  const emojiOnly = /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji_Modifier}|\uFE0F|\u200D|\s)+$/u.test(lastUserText.trim());
+  if (emojiOnly) {
+    return {
+      messages: [{
+        role: 'ai',
+        content: '这个表情是想表达什么意思呀？你可以直接告诉我，是同意、不同意，还是想补充别的。',
+      }],
+      // 保留当前等待字段；用户解释后仍应回答同一个问题，不能向后跳。
+      lastAskedSlot: state.lastAskedSlot || nextSlot,
+    };
+  }
+  const fixedProductAnswer = state.directQuestionAnsweredThisTurn ? null : getFixedProductAnswer(lastUserText);
   const isFirstTurn = isFirstConversationTurn(state.messages);
   const hasGeneralQuestion = GENERAL_QUESTION_REGEX.test(lastUserText.trim());
 
@@ -368,7 +440,7 @@ async function askNextQuestion(state) {
     .map((m) => getMessageText(m));
 
   let sideAnswer = null;
-  if (hasGeneralQuestion && !fixedProductAnswer) {
+  if (!state.directQuestionAnsweredThisTurn && hasGeneralQuestion && !fixedProductAnswer) {
     const sideResponse = await model.invoke([
       { role: 'system', content: SYSTEM_PROMPT },
       {
@@ -414,7 +486,7 @@ async function askNextQuestion(state) {
     const result = await generateOnce(extraInstruction);
     replyText = result.text;
     // eslint-disable-next-line no-await-in-loop
-    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel, nextSlot);
+    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel, nextSlot, state.slots);
 
     if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
@@ -454,10 +526,16 @@ async function askNextQuestion(state) {
         replyText
       );
     }
-    replyText = `回到咱们刚才的话题，"${slotLabel}"这一项我还没跟你确认清楚，方便直接告诉我一下吗？`;
+    replyText = buildFallbackSlotQuestion(nextSlot);
   }
 
   replyText = normalizeFoodRejectionTransition(replyText, lastUserText, nextSlot);
+
+  // 第一项尚未真正收到任何资料时不能说“记下啦”，否则像把固定模板
+  // 生硬贴在问题前面。只清理首次场景问题，不影响后续真实的承接确认。
+  if (nextSlot === 'scene') {
+    replyText = replyText.replace(/^(?:好嘞|好)[，,]?\s*记下啦[～~]?[，,]?\s*/u, '');
+  }
 
   if (state.emotionalSupportDeliveredThisTurn && nextSlot === 'scene') {
     replyText = EMOTIONAL_START_SCENE_QUESTION;
@@ -489,6 +567,7 @@ async function askNextQuestion(state) {
     ...(muscleGoalGuidance ? { muscleGoalGuidanceDelivered: true } : {}),
     ...(resumeMessage ? { resumePreviousQuestion: false } : {}),
     ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+    ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
   };
 }
 
@@ -498,6 +577,7 @@ module.exports = {
   checkAsksTargetSlot,
   detectAskNextQuestionViolations,
   FIRST_TURN_INTRO,
+  buildFallbackSlotQuestion,
   RESUME_PREVIOUS_QUESTION_MESSAGE,
   EMOTIONAL_START_SCENE_QUESTION,
   CAPABILITY_ANSWER,
@@ -506,6 +586,7 @@ module.exports = {
   WEARABLE_CALORIE_ANSWER,
   MAX_COLLECTION_QUESTION_LENGTH,
   detectCollectionVerbosity,
+  detectUnconfirmedSlotAssertions,
   getFixedProductAnswer,
   isFirstConversationTurn,
   composeReplyMessages,

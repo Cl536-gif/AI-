@@ -37,6 +37,31 @@ function mergeRestrictionReaction(oldValue, newValue, userText) {
 
 const EXPLICIT_ADDITION_REGEX = /(?:哦对[，,。\s]*)?(?:还有|还喜欢|也喜欢|另外(?:还有)?|再加上|而且|同时)/;
 
+// 用户一句话主动提供多项资料时，只有原文里存在清楚、可核对的直接证据
+// 才允许跳过确认。这里不相信模型候选值本身，而是重新检查用户原话；
+// 模糊菜名推断、孤立数字和需要解释的表达仍走确认流程。
+function hasExplicitFirstValueEvidence(field, userText) {
+  const text = String(userText || '').trim();
+  switch (field) {
+    case 'scene':
+      return /(食堂|饭堂|点外卖|叫外卖|外卖)/.test(text);
+    case 'cafeteriaMode':
+      return /(食堂|饭堂)[^。！？\n]{0,15}(自选|自己挑|自由选|固定套餐|配好的套餐)|(?:自选|自己挑菜|自由选菜|固定套餐)(?:的食堂|窗口)/.test(text);
+    case 'budget':
+      return /(?:预算[^。！？\n]{0,8})?\d+(?:\.\d+)?\s*(?:元|块钱|块)(?:\s*(?:一顿|每顿))?|(?:每顿|一顿)[^。！？\n]{0,8}\d+(?:\.\d+)?/.test(text);
+    case 'restrictions':
+      return /(没有|无|不吃|不喝|忌口|过敏|吃了会|喝了会|腹泻|拉肚子|腹胀|发痒|起疹)/.test(text);
+    case 'goal':
+      return /(想要?|希望|目标|减脂|减肥|塑形|增肌|马甲线|腹肌|薄肌|上镜|穿衣)/.test(text);
+    case 'exercise':
+      return /(不运动|没运动|运动|跑步|健身|力量训练|打球|攀岩|游泳|骑车|瑜伽|普拉提|走路|散步)/.test(text);
+    case 'taste':
+      return /(喜欢吃?|爱吃|偏爱|偏好|口味[^。！？\n]{0,8}(?:辣|甜|酸|咸|清淡|重口))/.test(text);
+    default:
+      return false;
+  }
+}
+
 function stripPreferencePrefix(value) {
   return String(value || '')
     .replace(/^(?:我)?(?:还|也)?(?:喜欢吃|喜欢|爱吃|偏好)/, '')
@@ -203,7 +228,8 @@ async function conflictRouter(state) {
           (!state.slots.scene?.confirmed &&
             state.lastAskedSlot === 'scene' &&
             state.candidateSlots?.scene?.includes('食堂')));
-      if ((isFocusSlot || canSafelyCaptureCafeteriaMode) && !confirmationReason) {
+      const hasExplicitEvidence = hasExplicitFirstValueEvidence(key, userText);
+      if ((isFocusSlot || canSafelyCaptureCafeteriaMode || hasExplicitEvidence) && !confirmationReason) {
         // AI这一轮主动问的就是这一项，用户是在正面回答问题，风险较低，
         // 按原逻辑直接确认。
         slotUpdates[key] = { value: candidate, confirmed: true };
@@ -300,4 +326,5 @@ module.exports = {
   classifyPotentialConflict,
   mergeRestrictionReaction,
   mergeExplicitAddition,
+  hasExplicitFirstValueEvidence,
 };

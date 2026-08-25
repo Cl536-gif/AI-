@@ -27,45 +27,27 @@ async function askConfirmation(state) {
   const isFirstTimeSurprise = pending.oldValue === null;
   const askedCount = (pending.askedCount || 0) + 1;
 
-  const prompt = [
-    {
-      role: 'system',
-      content:
-        '你是饮食秘书AI，语气自然口语化，像发微信消息一样，不用emoji、不用' +
-        '分点列表，3句话以内。' +
-        (isFirstTimeSurprise
-          ? '任务：这一轮AI本来问的是别的问题，但从用户这句话里，似乎顺带' +
-            `提取到了关于"${SLOT_LABELS[pending.field]}"的信息："${pending.newValue}"` +
-            '。这一项用户之前没有明确说过，不确定这次理解得对不对，也不确定' +
-            '用户是不是真的在主动说这件事。请生成一句自然的确认问句，跟用户' +
-            '核实一下这个理解对不对，不要直接当成用户已经确认过的信息来聊。'
-          : '任务：跟用户确认一个疑似改口/纠正的信息，不要直接默认这个改动' +
-            `成立。背景：用户之前说的"${SLOT_LABELS[pending.field]}"是` +
-            `"${pending.oldValue}"，这一轮看起来是想改成"${pending.newValue}"，` +
-            '请生成一句自然的确认问句问清楚这一点。'),
-    },
-  ];
-
   let response;
   if (pending.reason?.type === 'dish_flavor_inference') {
     response = {
       content: `${pending.reason.dishName}通常会做得${pending.reason.inferredTaste}，我先理解成你喜欢带辣的口味，对吗？`,
     };
   } else if (pending.reason?.type === 'dish_collection_inference') {
+    const existingFoods = pending.oldValue ? `之前记录的${pending.oldValue}` : '之前记录的食物';
     response = {
       content:
-        `我会把之前说的食物和${pending.reason.dishName}都保留在口味清单里，不会覆盖掉。` +
+        `我会把${existingFoods}和新补充的${pending.reason.dishName}都保留在口味清单里，不会覆盖掉。` +
         `${pending.reason.dishName}通常偏${pending.reason.inferredTaste}，我先综合理解成你也喜欢${pending.reason.inferredTaste}口味，对吗？`,
     };
   } else if (pending.field === 'goal' && isFirstTimeSurprise) {
-    response = { content: `我确认一下，你目前的身材目标是“${pending.newValue}”，对吗？` };
+    response = { content: `我理解的是，你目前想要“${pending.newValue}”，对吗？` };
   } else {
-    response = await model.invoke(prompt);
+    response = { content: buildConfirmationText(pending) };
   }
   const lastUserText = getMessageText(findLastUserMessage(state.messages));
-  const fixedAnswer = getFixedProductAnswer(lastUserText);
+  const fixedAnswer = state.directQuestionAnsweredThisTurn ? null : getFixedProductAnswer(lastUserText);
   let sideAnswer = null;
-  if (!fixedAnswer && SIDE_QUESTION_REGEX.test(lastUserText.trim())) {
+  if (!state.directQuestionAnsweredThisTurn && !fixedAnswer && SIDE_QUESTION_REGEX.test(lastUserText.trim())) {
     const sideResponse = await model.invoke([
       { role: 'system', content: SYSTEM_PROMPT },
       {
@@ -90,7 +72,16 @@ async function askConfirmation(state) {
     messages: replyMessages.map((content) => ({ role: 'ai', content })),
     pendingConfirmation: { ...pending, askedCount },
     ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+    ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
   };
 }
 
-module.exports = { askConfirmation };
+function buildConfirmationText(pending) {
+  const label = SLOT_LABELS[pending.field] || '这项信息';
+  if (pending.oldValue === null || pending.oldValue === undefined) {
+    return `这里我理解成“${pending.newValue}”，对吗？`;
+  }
+  return `${label}前面记录的是“${pending.oldValue}”，现在需要改成“${pending.newValue}”，对吗？`;
+}
+
+module.exports = { askConfirmation, buildConfirmationText };

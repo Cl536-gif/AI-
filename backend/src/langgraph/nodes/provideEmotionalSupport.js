@@ -5,6 +5,8 @@ const APPEARANCE_ANXIETY_REGEX = /(容貌焦虑|外貌焦虑|身材焦虑|照镜
 const PERSISTENCE_DISTRESS_REGEX = /(坚持不下|不想坚持|快坚持不住|想放弃|做不到|没动力|好挫败|很挫败|减不下去|怎么都瘦不下)/;
 const EATING_GUILT_REGEX = /(偷吃|吃多了|吃撑了|暴食|管不住嘴|没忍住)[^。！？]*(焦虑|后悔|内疚|自责|怎么办)?/;
 const GENERAL_ANXIETY_REGEX = /(好焦虑|很焦虑|特别焦虑|压力好大|压力很大|很难受|心情不好|情绪不好|很崩溃|好崩溃)/;
+const RETURNING_GREETING_REGEX = /(我回来[了啦咯]?|我又来[了啦咯]?|回来找你|又来找你)/;
+const RETURNING_GREETING = '宝子回来啦～';
 
 function classifyEmotionalContext(userText) {
   const text = String(userText || '').trim();
@@ -39,10 +41,21 @@ function isFirstConversationTurn(messages) {
 async function provideEmotionalSupport(state) {
   const userText = getMessageText(findLastUserMessage(state.messages));
   const category = classifyEmotionalContext(userText);
-  if (!category) return {};
+  const shouldIntroduce = isFirstConversationTurn(state.messages) && !state.longTermContext?.profile;
+  const shouldWelcomeBack = Boolean(state.longTermContext?.profile) && RETURNING_GREETING_REGEX.test(userText);
+  if (!category) {
+    const messages = [
+      ...(shouldIntroduce ? [{ role: 'ai', content: FIRST_TURN_INTRO }] : []),
+      ...(shouldWelcomeBack ? [{ role: 'ai', content: RETURNING_GREETING }] : []),
+    ];
+    return messages.length > 0 ? { messages } : {};
+  }
   return {
     messages: [
-      ...(isFirstConversationTurn(state.messages) ? [{ role: 'ai', content: FIRST_TURN_INTRO }] : []),
+      ...(shouldIntroduce
+        ? [{ role: 'ai', content: FIRST_TURN_INTRO }]
+        : []),
+      ...(shouldWelcomeBack ? [{ role: 'ai', content: RETURNING_GREETING }] : []),
       { role: 'ai', content: buildEmotionalSupportMessage(category) },
     ],
     emotionalSupportDeliveredThisTurn: true,
@@ -53,4 +66,6 @@ module.exports = {
   provideEmotionalSupport,
   classifyEmotionalContext,
   buildEmotionalSupportMessage,
+  RETURNING_GREETING_REGEX,
+  RETURNING_GREETING,
 };

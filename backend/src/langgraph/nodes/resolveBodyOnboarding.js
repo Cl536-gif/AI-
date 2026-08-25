@@ -4,12 +4,15 @@ const { findLastUserMessage, getMessageText } = require('../utils/messages');
 const { CYCLE_ONBOARDING_QUESTION } = require('./generatePlan');
 
 const DECLINE_REGEX = /(不想|不用|不需要|暂时不|先不|跳过|拒绝|不方便|以后再说)/;
+const PAUSE_ONBOARDING_REGEX = /(?:现在|这会儿)?(?:有点|比较|太)?忙|(?:现在|这会儿)?没(?:有)?空|抽不开身|晚点(?:再)?(?:说|填|继续|回来)|今天(?:有空|晚些时候)(?:再)?|先暂停|改天再说/;
+const RESUME_ONBOARDING_REGEX = /^(?:继续|继续建档|接着来|接着填|我回来了|现在有空了)[。！!～~]?$/;
 const CONFIRM_REGEX = /^(对|是|是的|没错|正确|确认|就是这样)[。！!～~]?$/;
-const REQUIRED_KEYS = ['ageYears', 'heightCm', 'currentWeightKg'];
+const REQUIRED_KEYS = ['ageYears', 'heightCm', 'currentWeightKg', 'dailyActivity'];
 const FIELD_LABELS = {
   ageYears: '年龄',
   heightCm: '身高',
   currentWeightKg: '当前体重',
+  dailyActivity: '平时活动情况',
 };
 
 const BodyProfileSchema = z.object({
@@ -33,6 +36,16 @@ const structuredBodyExtractor = classifierModel.withStructuredOutput(BodyProfile
 
 function compactProfile(profile) {
   return Object.fromEntries(Object.entries(profile || {}).filter(([, value]) => value !== null && value !== undefined && value !== ''));
+}
+
+const DAILY_ACTIVITY_EVIDENCE_REGEX = /(久坐|坐着|走动|站立|活动量|上课|上班|通勤|体力劳动|每天[^。！？]{0,10}(?:步|走)|步数)/;
+
+function sanitizeBodyExtractionByEvidence(extracted, userText = '') {
+  const cleaned = { ...(extracted || {}) };
+  // 真实模型曾在只有“20kg, 165cm 22岁”的回答里自行补出活动量，导致
+  // 建档提前完成、正式计算时才报错。活动量必须有用户本轮原文证据。
+  if (!DAILY_ACTIVITY_EVIDENCE_REGEX.test(String(userText))) delete cleaned.dailyActivity;
+  return cleaned;
 }
 
 function missingRequiredFields(profile) {
@@ -124,11 +137,38 @@ async function resolveBodyOnboarding(state) {
     };
   }
 
+  if (PAUSE_ONBOARDING_REGEX.test(userText)) {
+    return {
+      messages: [{ role: 'ai', content: '好，今天有空时跟我说“继续建档”就行，我会从还没填的地方接着问，前面已经说过的信息不用重填。' }],
+      bodyOnboardingStatus: 'required_missing',
+      pendingBodyOnboarding: {
+        ...(state.pendingBodyOnboarding || {}),
+        stage: 'collecting',
+        paused: true,
+      },
+    };
+  }
+
+  if (state.pendingBodyOnboarding?.paused && RESUME_ONBOARDING_REGEX.test(userText)) {
+    const missing = missingRequiredFields(state.bodyProfile || {});
+    return {
+      messages: [{ role: 'ai', content: `好，我们接着上次没填完的来哈。还差${missing.map((key) => FIELD_LABELS[key]).join('、')}，直接告诉我就可以。` }],
+      pendingBodyOnboarding: {
+        ...state.pendingBodyOnboarding,
+        paused: false,
+      },
+    };
+  }
+
   if (DECLINE_REGEX.test(userText)) {
-    return proceedToCycle({
-      messages: [{ role: 'ai', content: '好，这些基础数据先不记录；之后愿意补充时再告诉我就可以。' }],
-      bodyOnboardingStatus: 'declined',
-    });
+    return {
+      messages: [{ role: 'ai', content: '明白。不过基础身体数据和日常活动情况是长期规划计算需要的建档信息；在补齐前，我不会启动长期方案或14天试用。你今天方便时再回来继续填写就好。' }],
+      bodyOnboardingStatus: 'required_missing',
+      pendingBodyOnboarding: {
+        stage: 'collecting',
+        askedCount: (state.pendingBodyOnboarding?.askedCount || 1) + 1,
+      },
+    };
   }
 
   if (state.pendingBodyOnboarding?.stage === 'confirm_implausible' && CONFIRM_REGEX.test(userText)) {
@@ -143,7 +183,7 @@ async function resolveBodyOnboarding(state) {
     }
   }
 
-  const extracted = compactProfile(await structuredBodyExtractor.invoke([
+  const extracted = compactProfile(sanitizeBodyExtractionByEvidence(await structuredBodyExtractor.invoke([
     {
       role: 'system',
       content:
@@ -151,7 +191,7 @@ async function resolveBodyOnboarding(state) {
         '提问顺序是年龄、身高、当前体重。斤必须换算成千克（2斤=1千克）。不要猜测用户没有说的信息。',
     },
     { role: 'human', content: userText },
-  ]));
+  ]), userText));
   const explicitUnits = parseExplicitBodyUnits(userText);
   // 用户确认可疑值时可以只发更正项，例如上一轮“20kg, 165cm, 22岁”，
   // 这一轮只改成“80公斤”。必须以待确认候选档案为底稿再覆盖更正值，
@@ -188,11 +228,12 @@ async function resolveBodyOnboarding(state) {
 
   const askedCount = state.pendingBodyOnboarding?.askedCount || 1;
   if (askedCount >= 3) {
-    return proceedToCycle({
-      messages: [{ role: 'ai', content: '目前能确认的数据我先记下，缺少的部分以后再补充，不耽误我们继续。' }],
+    return {
+      messages: [{ role: 'ai', content: `目前能确认的数据我先记下了，还差${missing.map((key) => FIELD_LABELS[key]).join('、')}。这几项会直接影响长期规划计算，补齐前不会启动长期方案或14天试用；你今天方便时再回来继续填写就好。` }],
       bodyProfile: mergedProfile,
-      bodyOnboardingStatus: 'partial',
-    });
+      bodyOnboardingStatus: 'required_missing',
+      pendingBodyOnboarding: { stage: 'collecting', askedCount: askedCount + 1 },
+    };
   }
 
   return {
@@ -209,4 +250,5 @@ module.exports = {
   parseExplicitBodyUnits,
   findImplausibleBodyValue,
   mergeBodyProfileForTurn,
+  sanitizeBodyExtractionByEvidence,
 };

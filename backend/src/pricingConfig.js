@@ -1,19 +1,40 @@
-// 推送服务定价配置：定价策略还没最终确定，priceDisplay 先留 null 占位。
-// askServiceChoice.js 里的服务边界话术调用 buildPushServiceClause() 来
-// 动态生成价格这一句，以后调价/改试用期只需要改这个文件，不用动话术
-// 本身的措辞。
-const pushService = {
-  trialDays: 14,
-  billingCycleDays: 14,
-  // 定价没定下来之前保持 null；定下来后填类似 "9.9元" 这样的字符串
-  priceDisplay: null,
-};
+// 客观定价事实只保存在 pricingConfig.json；本文件负责校验配置并生成
+// 确定性文案，不在代码或提示词中重复写死价格。
+const rawConfig = require('./pricingConfig.json');
+
+function readPositiveInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name}必须是正整数`);
+  }
+  return value;
+}
+
+function readPositivePrice(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new TypeError('pushService.priceCny必须是有限正数');
+  }
+  return value;
+}
+
+if (!rawConfig || !rawConfig.pushService || rawConfig.pushService.currency !== 'CNY') {
+  throw new TypeError('pricingConfig.json必须提供CNY计价的pushService配置');
+}
+
+const pushService = Object.freeze({
+  trialDays: readPositiveInteger(rawConfig.pushService.trialDays, 'pushService.trialDays'),
+  billingCycleDays: readPositiveInteger(
+    rawConfig.pushService.billingCycleDays,
+    'pushService.billingCycleDays'
+  ),
+  priceCny: readPositivePrice(rawConfig.pushService.priceCny),
+  currency: 'CNY',
+});
 
 function buildPushServiceClause() {
-  const priceClause = pushService.priceDisplay
-    ? `之后按每${pushService.billingCycleDays}天为一个周期，收费${pushService.priceDisplay}`
-    : `之后按每${pushService.billingCycleDays}天为一个周期付费（具体价格还在制定中，定下来第一时间告诉你）`;
-  return `这部分有${pushService.trialDays}天免费试用，${priceClause}。`;
+  return (
+    `这部分有${pushService.trialDays}天免费试用，` +
+    `之后每${pushService.billingCycleDays}天收费${pushService.priceCny}元。`
+  );
 }
 
 function buildServiceBoundaryAnswer() {

@@ -16,14 +16,15 @@ async function main() {
     pendingConfirmationQueue: [],
   });
 
-  if (!result.pendingConfirmation) throw new Error('复合消息的第一项没有进入确认流程');
-  if ((result.pendingConfirmationQueue || []).length !== 3) {
-    throw new Error(`复合消息其余字段没有逐项排队，实际数量: ${(result.pendingConfirmationQueue || []).length}`);
+  if (result.pendingConfirmation) throw new Error('清晰复合消息不应被拆成逐项确认');
+  if ((result.pendingConfirmationQueue || []).length !== 0) {
+    throw new Error(`清晰字段不应进入确认队列，实际数量: ${result.pendingConfirmationQueue.length}`);
   }
-  const queuedFields = result.pendingConfirmationQueue.map((item) => item.field).join(',');
-  if (queuedFields !== 'taste,budget,goal') throw new Error(`确认队列顺序错误: ${queuedFields}`);
+  for (const field of ['scene', 'taste', 'budget', 'goal']) {
+    if (!result.slots?.[field]?.confirmed) throw new Error(`${field}没有直接确认保存`);
+  }
 
-  console.log('✅ 同一句里的多个饮食维度都会被看见并按顺序进入确认队列');
+  console.log('✅ 同一句里的多个清晰饮食维度会整体接收，不拆成逐项确认问卷');
 }
 
 main().catch((err) => {

@@ -48,12 +48,13 @@ async function main() {
   r = await turn('不运动');
   assertIncludes(joined(r), ['使用方式'], '六项完成后服务选择');
   await turn('长期');
+  await turn('生理女性');
   r = await turn('每隔两天');
   const plan = joined(r);
   assertIncludes(plan, ['适合午餐或晚餐', '早餐', '1.', '年龄', '身高', '当前体重'], '方案结尾与身体数据编号');
   if (/中午还是晚上|午餐还是晚餐/.test(plan)) throw new Error('方案仍在追问午餐还是晚餐');
 
-  r = await turn('20kg, 165cm 22岁');
+  r = await turn('20kg, 165cm 22岁，平时上课久坐');
   assertIncludes(joined(r), ['20公斤', '确认'], '可疑体重识别确认');
   r = await turn('80公斤');
   assertIncludes(joined(r), ['22岁', '165厘米', '80公斤', '1.', '规律'], '更正体重与编号经期问题');

@@ -37,6 +37,40 @@ const DietState = Annotation.Root({
     default: () => [],
   }),
 
+  // 由路由层通过统一的业务读取器注入。节点只能在经过专项评审后按需
+  // 使用；当前仅 answerFollowUp 会读取经过再次最小化的长期摘要，禁止
+  // 任何节点自行查数据库或扩大业务层已经裁定的权限范围。
+  longTermContext: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 暂停计划后用户明确选择“按现在情况重做”时进入的专用对话状态。
+  // 只负责收集持续变化并让用户确认清单；确认完成前不会创建新版草稿。
+  pendingPlanRevision: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  confirmedPlanRevisionRequest: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 新版变化清单确认后，按变化类型决定是否需要补充能量计算输入。
+  // ready 只表示资料齐全，仍不代表草稿已创建或新版已启用。
+  planRevisionPreparation: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 生成节点只输出经过结构校验的业务命令，不直接访问数据库。路由层
+  // 成功写入并交付后，下一轮入口会先清除此一次性命令，避免重复建版。
+  planRevisionDraftCommand: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
   // 六项信息的当前状态，每项 { value, confirmed }
   slots: Annotation({
     reducer: (left, right) => ({ ...left, ...right }),
@@ -70,6 +104,21 @@ const DietState = Annotation.Root({
   // 本轮入口已经发送过情绪支持。后续提问节点据此避免再次重复共情，
   // 并在问题前加一句简短的“是否愿意开始”过渡；使用后立即重置。
   emotionalSupportDeliveredThisTurn: Annotation({
+    reducer: (_left, right) => right,
+    default: () => false,
+  }),
+
+  // 当前用户消息中需要优先回答的明确问题。入口分类节点只负责识别，
+  // 专用回答节点回答后立即清空；原始用户消息仍保留，因此后续资料解析
+  // 节点还能继续处理同一句里顺带提供的档案信息。
+  directQuestion: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 本轮明确问题已经由专用节点回答。后续确认/采集节点据此只恢复原流程，
+  // 不再调用各自旧有的“顺带回答”逻辑，避免同一问题出现两份答案。
+  directQuestionAnsweredThisTurn: Annotation({
     reducer: (_left, right) => right,
     default: () => false,
   }),
@@ -117,6 +166,20 @@ const DietState = Annotation.Root({
     default: () => false,
   }),
 
+  // 六项完成后先发给用户的当餐基础搭配。长期建档完成时，业务层会将
+  // 这份已经展示过的搭配作为第一阶段方案内容保存，避免再次整段复述。
+  initialMealPlanText: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 经期资料完成后由纯节点生成的一次性业务命令。节点不碰数据库；
+  // 路由层只有在计算、建草稿和正式交付全部成功后才返回成功回复。
+  initialLongTermPlanCommand: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
   // checkCompleteness 节点的判断结果：六项是否已经全部确认
   isComplete: Annotation({
     reducer: (_left, right) => right,
@@ -135,6 +198,13 @@ const DietState = Annotation.Root({
   // null（还没问/还没定）| 'free'（免费临时问答）| 'subscribed'（开通了
   // 定期推送服务）。只有这一项不是null时才会放行到generatePlan。
   serviceTier: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 用户选择长期规划后必须明确提供，用于选择成人能量方程及判断当前
+  // 产品资格。不能根据称呼、目标人群或是否填写经期信息自行推断。
+  equationSex: Annotation({
     reducer: (_left, right) => right,
     default: () => null,
   }),
@@ -180,6 +250,8 @@ const DietState = Annotation.Root({
     default: () => null,
   }),
 
+  // bodyProfile.currentWeightKg 是档案当前规范值；称重历史不放在 state
+  // 中，而应追加为 body_measurement 事件的 payload.weightKg。
   bodyProfile: Annotation({
     reducer: (left, right) => ({ ...(left || {}), ...(right || {}) }),
     default: () => ({}),

@@ -1,6 +1,7 @@
-const { isUnsupportedSceneGuess } = require('../nodes/extractSlots');
+const { isUnsupportedSceneGuess, normalizeSceneFromContext } = require('../nodes/extractSlots');
+const { askNextQuestion } = require('../nodes/askNextQuestion');
 
-function main() {
+async function main() {
   const falseTriggers = [
     '我是校男大学生',
     '我是男大学生',
@@ -24,13 +25,39 @@ function main() {
     throw new Error('误删了真实外卖场景');
   }
 
+  ['都吃', '两个都吃', '都有', '换着吃', '混着吃', '食堂和外卖都吃'].forEach((text) => {
+    const normalized = normalizeSceneFromContext({
+      userText: text,
+      lastAskedSlot: 'scene',
+      extractedValue: null,
+    });
+    if (normalized !== '食堂和外卖都会吃') {
+      throw new Error(`上一轮明确问场景时没有识别“两种都吃”: ${text}`);
+    }
+    if (isUnsupportedSceneGuess('scene', normalized, text, 'scene')) {
+      throw new Error(`正确识别的混合就餐场景又被证据检查误删: ${text}`);
+    }
+  });
+
+  if (normalizeSceneFromContext({ userText: '都吃', lastAskedSlot: 'restrictions', extractedValue: null })) {
+    throw new Error('问忌口时把“都吃”误判成食堂和外卖都吃');
+  }
+  const mixedSceneReply = await askNextQuestion({
+    nextSlotToAsk: 'cafeteriaMode',
+    slots: { scene: { value: '食堂和外卖都会吃', confirmed: true } },
+    messages: [{ role: 'human', content: '都吃' }],
+  });
+  const mixedSceneText = mixedSceneReply.messages.map((item) => item.content).join('\n');
+  if (!mixedSceneText.includes('食堂和外卖会穿插着吃')) {
+    throw new Error(`保存混合场景后没有向用户明确复述: ${mixedSceneText}`);
+  }
+
   console.log('✅ 学生/学校身份不会再被推断成食堂');
   console.log('✅ 食堂、饭堂、打饭和外卖等明确原话仍能正常识别');
+  console.log('✅ 问“食堂还是外卖”时，“都吃/换着吃/混着吃”会保存为两种穿插');
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error('❌ 测试失败:', err.message);
   process.exit(1);
-}
+});

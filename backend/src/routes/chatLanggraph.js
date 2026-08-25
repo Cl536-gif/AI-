@@ -17,10 +17,25 @@ const crypto = require('crypto');
 const { MemorySaver } = require('@langchain/langgraph');
 const { workflow } = require('../langgraph/graph');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
+const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
+const userService = require('../services/userService');
+const { detectExplicitTimezone, detectExplicitMealTarget } = require('../services/userTimeService');
+const {
+  prepareGraphContext,
+  persistGraphTurn,
+} = require('../services/graphPersistenceCoordinator');
+const {
+  looksLikePrivacyRequest,
+  classifyPrivacyOnboardingMessage,
+  PRIVACY_POLICY_SUMMARY,
+  PRIVACY_LATER_REMINDER,
+} = require('../services/chatService');
 
 const router = express.Router();
 
 const MAX_MESSAGE_LENGTH = 2000;
+const GLOBAL_PRIVACY_FOLLOW_UP =
+  '以上是最重要的几条。还有隐私问题可以继续问我；如果没有，直接接着回答刚才的问题就好。';
 
 const checkpointer = new MemorySaver();
 const graphWithMemory = workflow.compile({ checkpointer });
@@ -37,7 +52,13 @@ function getMessageRole(message) {
 function sanitizeUserVisibleReply(text) {
   const normalizedCommonTerms = String(text || '')
     .replace(/\bOK\b/gi, '可以')
-    .replace(/\bAI\b/g, '智能秘书');
+    .replace(/\bAI\b/g, '智能秘书')
+    .replace(/当前数据库没有保存到可读取的历史建议(?:（为空）)?/g, '之前给过的临时搭配没有完整存进这份档案里')
+    .replace(/没有被系统持久化存档/g, '当时没有完整存进这份档案')
+    .replace(/[（(](?:为空|null|NULL)[）)]/g, '')
+    .replace(/数据库里?没有(?:保存|找到)到?可读取的?/g, '这份档案里暂时没有')
+    .replace(/等你吃完[、，,\s]*有感觉了[，,\s]*/g, '等你吃完，如果分量不够、很快又饿或者哪里不舒服，')
+    .replace(/吃完后?[、，,\s]*有感觉(?:了)?[，,\s]*/g, '吃完后如果分量不够、很快又饿或者哪里不舒服，');
   const sanitized = sanitizeEnglish(normalizedCommonTerms).replace(/(?:—+|－{2,}|-{2,})/g, '，');
   return formatLongReplyForReadability(sanitized);
 }
@@ -60,8 +81,21 @@ function formatLongReplyForReadability(text) {
   return paragraphs.join('\n\n');
 }
 
+function stripLongTermMetaJustification(text, longTermContext) {
+  const value = String(text || '').trim();
+  if (longTermContext?.accessMode !== 'long_term') return value;
+  const isMetaJustification = (paragraph) =>
+    /(?:这个|这份|以上|本次).{0,10}(?:搭配|安排|方案).{0,18}(?:结合|根据|按照)/u.test(paragraph) &&
+    /(?:预算|食堂|就餐|口味|偏好|目标|档案|记录)/u.test(paragraph);
+  const paragraphs = value.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const kept = paragraphs.filter((paragraph) => !isMetaJustification(paragraph));
+  return (kept.length ? kept : paragraphs).join('\n\n');
+}
+
 router.post('/', async (req, res, next) => {
-  const { message, threadId } = req.body || {};
+  const {
+    message, threadId, deviceId, introAlreadyShown, privacyOnboarding, testPersona,
+  } = req.body || {};
 
   if (typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: '消息内容不能为空' });
@@ -72,36 +106,172 @@ router.post('/', async (req, res, next) => {
   if (threadId !== undefined && typeof threadId !== 'string') {
     return res.status(400).json({ error: 'threadId 格式不正确' });
   }
+  if (introAlreadyShown !== undefined && typeof introAlreadyShown !== 'boolean') {
+    return res.status(400).json({ error: 'introAlreadyShown 格式不正确' });
+  }
+  if (privacyOnboarding !== undefined && typeof privacyOnboarding !== 'boolean') {
+    return res.status(400).json({ error: 'privacyOnboarding 格式不正确' });
+  }
+  const allowedTestPersonas = new Set([
+    'new_contact', 'free', 'long_term',
+    'long_term_day2', 'long_term_day8', 'long_term_plateau',
+  ]);
+  if (testPersona !== undefined &&
+      (process.env.NODE_ENV === 'production' || !allowedTestPersonas.has(testPersona))) {
+    return res.status(400).json({ error: 'testPersona 格式不正确' });
+  }
+  if (deviceId !== undefined) {
+    try {
+      validateDeviceId(deviceId);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
 
   const resolvedThreadId = threadId && threadId.trim() ? threadId.trim() : crypto.randomUUID();
   const config = { configurable: { thread_id: resolvedThreadId } };
 
   try {
+    let graphMessage = message.trim();
+    let prefixReplies = [];
+
+    // 数字选项只在服务器明确知道“当前正在等待隐私选择”时代表隐私命令。
+    // 进入正式对话后，后续任何1/2都只交给同一个LangGraph线程按当前问题解释。
+    if (privacyOnboarding) {
+      const privacyAction = classifyPrivacyOnboardingMessage(graphMessage);
+      if (privacyAction === 'policy') {
+        return res.json({
+          reply: GLOBAL_PRIVACY_FOLLOW_UP,
+          replies: [PRIVACY_POLICY_SUMMARY, GLOBAL_PRIVACY_FOLLOW_UP],
+          threadId: null,
+          privacyOnboardingPending: true,
+          globalCommand: 'privacy_policy',
+        });
+      }
+      if (privacyAction !== 'continue') {
+        const prompt = '想查看隐私政策重点，请回复“1”；已经了解并想开始，请回复“2”或“继续”。';
+        return res.json({
+          reply: prompt,
+          replies: [prompt],
+          threadId: null,
+          privacyOnboardingPending: true,
+          globalCommand: 'privacy_choice_pending',
+        });
+      }
+      graphMessage = '开始了解饮食习惯';
+      prefixReplies = [PRIVACY_LATER_REMINDER];
+    }
+
+    // 隐私政策是全局指令：进入 LangGraph 后仍可随时查看，但查看本身
+    // 不推进、不清空当前饮食采集状态。用户下一条继续回答原问题即可。
+    if (looksLikePrivacyRequest(graphMessage)) {
+      return res.json({
+        reply: GLOBAL_PRIVACY_FOLLOW_UP,
+        replies: [PRIVACY_POLICY_SUMMARY, GLOBAL_PRIVACY_FOLLOW_UP],
+        threadId: threadId && threadId.trim() ? threadId.trim() : null,
+        globalCommand: 'privacy_policy',
+      });
+    }
+
+    // 正式账号身份以后只能从服务端认证上下文取得，绝不接受请求正文里的
+    // userId。当前 deviceId 只映射为内部 anon:* 身份；档案与事件写入必须
+    // 经过 graphPersistenceCoordinator 的权限边界。
+    const anonymousUserId = deviceId ? await resolveAnonymousUser(deviceId) : null;
+    const explicitTimezone = detectExplicitTimezone(graphMessage);
+    if (anonymousUserId && explicitTimezone) {
+      await userService.updateTimezone(anonymousUserId, explicitTimezone);
+    }
+    const longTermContext = anonymousUserId ? await prepareGraphContext(anonymousUserId) : null;
+    if (longTermContext?.temporalContext) {
+      longTermContext.temporalContext.explicitMealTarget = detectExplicitMealTarget(graphMessage);
+    }
+    if (longTermContext && testPersona) longTermContext.developerTestPersona = testPersona;
+    const inputMessages = [];
+    if (!threadId && introAlreadyShown) {
+      inputMessages.push({
+        role: 'ai',
+        content: '我是你的饮食秘书，会结合你的日常情况提供生活化饮食建议。',
+      });
+    }
+    inputMessages.push({ role: 'human', content: graphMessage });
+    const isHomepageHandoff = !threadId && introAlreadyShown;
     const result = await graphWithMemory.invoke(
-      { messages: [{ role: 'human', content: message.trim() }] },
+      {
+        messages: inputMessages,
+        longTermContext,
+        // 首页的“食堂还是外卖”由 /api/chat 发出，第一条答案才切到
+        // LangGraph。必须把上一问的字段显式带进状态，否则“食堂”能靠
+        // 关键词识别，但“都吃/换着吃”这类依赖上下文的省略回答会丢失。
+        ...(isHomepageHandoff ? { lastAskedSlot: 'scene' } : {}),
+      },
       config
     );
+    const persistence = anonymousUserId
+      ? await persistGraphTurn(
+          anonymousUserId,
+          graphMessage,
+          resolvedThreadId,
+          result
+        )
+      : {
+          profilePersistence: { status: 'identity_not_provided', profile: null },
+          advicePersistence: { status: 'identity_not_provided', records: [] },
+          serviceStatus: null,
+          eventPersistence: { status: 'identity_not_provided', recordedEvents: [] },
+          planAdjustment: { status: 'not_evaluated', action: 'none', reason: 'identity_not_provided' },
+          planRecovery: { status: 'not_applicable', action: 'none', reason: 'identity_not_provided' },
+          planRevision: { status: 'not_requested', plan: null },
+          initialLongTermPlan: { status: 'not_requested', plan: null },
+        };
 
     const lastHumanIndex = result.messages.map((item) => getMessageRole(item)).lastIndexOf('human');
-    const replies = result.messages
+    const graphReplies = result.messages
       .slice(lastHumanIndex + 1)
       .filter((item) => getMessageRole(item) !== 'human' && item.content)
-      .map((item) => sanitizeUserVisibleReply(item.content));
+      .map((item) => sanitizeUserVisibleReply(item.content))
+      .map((item) => stripLongTermMetaJustification(item, longTermContext));
+    if (prefixReplies.length && graphReplies.length) {
+      graphReplies[0] = graphReplies[0].replace(/^你好呀?[～~，,\s]*/u, '').trim();
+    }
+    const replies = [
+      ...prefixReplies,
+      ...graphReplies,
+    ];
     const reply = replies[replies.length - 1] || '';
 
     res.json({
       reply,
       replies,
       threadId: resolvedThreadId,
+      privacyOnboardingPending: false,
+      identityStatus: anonymousUserId ? 'anonymous_resolved' : 'not_provided',
+      profilePersistence: persistence.profilePersistence.status,
+      advicePersistence: persistence.advicePersistence.status,
+      serviceStatus: persistence.serviceStatus?.status || 'free',
+      eventPersistence: persistence.eventPersistence.status,
+      planAdjustment: persistence.planAdjustment?.action || 'none',
+      planRecovery: persistence.planRecovery?.action || 'none',
+      planRevision: persistence.planRevision?.status || 'not_requested',
+      activePlanVersion: persistence.planRevision?.plan?.planVersion || null,
+      initialLongTermPlan: persistence.initialLongTermPlan?.status || 'not_requested',
+      initialOfficialPlanId: persistence.initialLongTermPlan?.plan?.planId || null,
+      contextAccessMode: longTermContext?.accessMode || 'identity_not_provided',
+      userTimezone: longTermContext?.temporalContext?.timezone || null,
+      localDate: longTermContext?.temporalContext?.localDate || null,
+      localWeekday: longTermContext?.temporalContext?.weekday || null,
+      mealTiming: longTermContext?.temporalContext?.mealTiming || null,
+      explicitMealTarget: longTermContext?.temporalContext?.explicitMealTarget || null,
       slots: result.slots,
       cafeteriaMode: result.slots?.cafeteriaMode?.value || null,
       isComplete: result.isComplete,
+      initialPlanDelivered: Boolean(result.initialPlanDelivered),
       // isComplete 现在只代表"六项信息问完"，不代表方案已经生成——
       // 六项问完之后还要先经过 askServiceChoice 这一步，plan 是否真的
       // 已经生成，看 retrieved 是否非空（只有 generatePlan 才会填这项）
       // 更准确；serviceTier/pushSchedule 供前端/测试脚本观察这个新分岔
       // 的状态。
       serviceTier: result.serviceTier,
+      equationSex: result.equationSex,
       pushSchedule: result.pushSchedule,
       bodyOnboardingStatus: result.bodyOnboardingStatus,
       bodyProfile: result.bodyProfile || {},
@@ -117,3 +287,4 @@ router.post('/', async (req, res, next) => {
 module.exports = router;
 module.exports.sanitizeUserVisibleReply = sanitizeUserVisibleReply;
 module.exports.formatLongReplyForReadability = formatLongReplyForReadability;
+module.exports.stripLongTermMetaJustification = stripLongTermMetaJustification;

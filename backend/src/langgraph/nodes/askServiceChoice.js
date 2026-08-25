@@ -44,12 +44,18 @@ const SCHEDULE_QUESTION_MESSAGE =
   '你需要时我再结合当天情况帮你调整，不会一直打扰你～你希望每天、隔天、只在工作日、周末，' +
   '还是每周一次？再告诉我大概几点就行。';
 
+const EQUATION_SEX_QUESTION_MESSAGE =
+  '在继续长期规划前，还需要确认一项用于后台计算的基础信息：你的生理性别是女性还是男性？';
+
+const EQUATION_SEX_RETRY_MESSAGE =
+  '这项会决定能量计算公式和长期服务资格，请直接告诉我是生理女性还是生理男性。';
+
 const SUBSCRIPTION_ONBOARDING_OVERVIEW =
   '好～接下来还有三小项，大概两三分钟就能说完：\n\n' +
   '1. 饮食提醒的频率和时间\n' +
   '2. 年龄、身高、体重等基础信息\n' +
   '3. 经期和近期身体状态\n\n' +
-  '我们一项一项来，不用一次全填完～';
+  '我们一项一项来，不用一次全填完。现在没时间也没关系，今天有空时跟我说“继续建档”，我会从停下的位置接着来哈。';
 
 const SCHEDULE_RETRY_MESSAGE =
   '不好意思，刚才的提醒安排还没听清楚～你可以告诉我多久提醒一次，再补充一个大概时间，比如工作日晚上或者每周日上午。';
@@ -85,6 +91,18 @@ async function askServiceChoice(state) {
     };
   }
 
+  if (pending.stage === 'equation_sex') {
+    return {
+      messages: [{
+        role: 'ai',
+        content: (pending.askedCount || 0) === 0
+          ? EQUATION_SEX_QUESTION_MESSAGE
+          : EQUATION_SEX_RETRY_MESSAGE,
+      }],
+      pendingServiceChoice: { ...pending, askedCount: (pending.askedCount || 0) + 1 },
+    };
+  }
+
   const isFirstScheduleAsk = (pending.askedCount || 0) === 0;
   return {
     messages: (isFirstScheduleAsk
@@ -102,6 +120,8 @@ module.exports = {
   SCHEDULE_QUESTION_MESSAGE,
   SCHEDULE_RETRY_MESSAGE,
   SUBSCRIPTION_ONBOARDING_OVERVIEW,
+  EQUATION_SEX_QUESTION_MESSAGE,
+  EQUATION_SEX_RETRY_MESSAGE,
   MALE_FREE_ONLY_MESSAGE,
   isMaleUser,
 };

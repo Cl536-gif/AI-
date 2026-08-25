@@ -33,13 +33,96 @@ const { resolveBodyOnboarding } = require('./nodes/resolveBodyOnboarding');
 const { generatePlan } = require('./nodes/generatePlan');
 const { provideEmotionalSupport } = require('./nodes/provideEmotionalSupport');
 const { answerFollowUp } = require('./nodes/answerFollowUp');
+const { detectDirectQuestion, answerDirectQuestion } = require('./nodes/directQuestion');
+const { getMessageText, findLastUserMessage } = require('./utils/messages');
+const { NEW_PLAN_REGEX } = require('../services/planAdjustmentService');
+const {
+  startPlanRevision,
+  resolvePlanRevision,
+} = require('./nodes/resolvePlanRevision');
+const {
+  prepareFromConfirmedRequest,
+  resolvePlanRevisionPreparation,
+} = require('./nodes/preparePlanRevision');
+const {
+  generatePlanRevision,
+  clearPlanRevisionDraftCommand,
+  retryPlanRevisionDelivery,
+} = require('./nodes/generatePlanRevision');
+const {
+  finalizeInitialLongTermPlan,
+  clearInitialLongTermPlanCommand,
+} = require('./nodes/finalizeInitialLongTermPlan');
+
+function shouldRouteReturningUserToFollowUp(state) {
+  // 已经取得长期服务上下文，就说明这个身份已经完成长期建档并进入了
+  // 持续服务阶段。这里不能再受旧 thread 里残留的六项槽位影响，否则
+  // 用户重复说“我是女大学生、想减脂”时会被误送回首次采集流程。
+  if (state.longTermContext?.accessMode === 'long_term') return true;
+  const hasPersistedProfile = Boolean(state.longTermContext?.profile?.profile);
+  const graphSlotsAreEmpty = Object.values(state.slots || {}).every(
+    (slot) => !slot?.confirmed && (slot?.value === null || slot?.value === undefined)
+  );
+  return hasPersistedProfile && graphSlotsAreEmpty;
+}
 
 function routeEntry(state) {
+  if (state.initialLongTermPlanCommand) return 'clearInitialLongTermPlanCommand';
+  if (state.planRevisionDraftCommand) {
+    const activePlan = state.longTermContext?.activePlan;
+    return activePlan?.parentPlanId === state.planRevisionDraftCommand.parentPlanId
+      ? 'clearPlanRevisionDraftCommand'
+      : 'retryPlanRevisionDelivery';
+  }
+  if (state.directQuestion) return 'answerDirectQuestion';
+  if (state.planRevisionPreparation?.status === 'collect_energy_inputs') return 'resolvePlanRevisionPreparation';
+  if (state.pendingPlanRevision) return 'resolvePlanRevision';
   if (state.pendingConfirmation) return 'resolvePendingConfirmation';
   if (state.pendingServiceChoice) return 'resolveServiceChoice';
   if (state.pendingBodyOnboarding) return 'resolveBodyOnboarding';
   if (state.pendingCycleOnboarding) return 'resolveCycleOnboarding';
+  const userText = getMessageText(findLastUserMessage(state.messages)).replace(/\s+/g, '');
+  if (state.longTermContext?.pausedPlan && NEW_PLAN_REGEX.test(userText)) return 'startPlanRevision';
+  // 新 threadId 的图状态必然从空槽位开始，但同一身份的业务档案不会随
+  // 会话一起清空。已有档案且图槽位仍全部为空，说明这是老用户开启的
+  // 新对话：直接按当前问题回复，不能重新走首次自我介绍和六项采集。
+  // 同一首次建档会话不受影响，因为第二轮开始时至少已有一个图槽位。
+  if (shouldRouteReturningUserToFollowUp(state)) return 'answerFollowUp';
   return 'extractSlots';
+}
+
+// 问题已经单独回答，但必须继续处理同一条用户消息。这样一句“今天怎么
+// 吃，我晚上会跑步40分钟”既会先获得当餐答案，也不会丢掉运动信息。
+// 对已有完整档案、当前没有待办收集步骤的用户则直接结束，避免再由
+// answerFollowUp把同一个问题回答第二次。
+function routeAfterDirectQuestion(state) {
+  if (state.planRevisionPreparation?.status === 'collect_energy_inputs') return 'resolvePlanRevisionPreparation';
+  if (state.pendingPlanRevision) return 'resolvePlanRevision';
+  if (state.pendingConfirmation) return 'resolvePendingConfirmation';
+  if (state.pendingServiceChoice) return 'resolveServiceChoice';
+  if (state.pendingBodyOnboarding) return 'resolveBodyOnboarding';
+  if (state.pendingCycleOnboarding) return 'resolveCycleOnboarding';
+  const userText = getMessageText(findLastUserMessage(state.messages)).replace(/\s+/g, '');
+  if (state.longTermContext?.pausedPlan && NEW_PLAN_REGEX.test(userText)) return 'startPlanRevision';
+  if (shouldRouteReturningUserToFollowUp(state) || state.initialPlanDelivered) return '__end__';
+  return 'extractSlots';
+}
+
+function routeAfterCycleOnboarding(state) {
+  return state.serviceTier === 'subscribed' &&
+    state.equationSex === 'female' &&
+    state.bodyOnboardingStatus === 'completed' &&
+    state.cycleOnboardingStatus === 'completed'
+    ? 'finalizeInitialLongTermPlan'
+    : '__end__';
+}
+
+function routeAfterPlanRevision(state) {
+  return state.confirmedPlanRevisionRequest ? 'preparePlanRevision' : '__end__';
+}
+
+function routeAfterRevisionPreparation(state) {
+  return state.planRevisionPreparation?.status === 'ready' ? 'generatePlanRevision' : '__end__';
 }
 
 function routeAfterConflictCheck(state) {
@@ -61,6 +144,7 @@ function routeAfterCompleteness(state) {
 // 推送时间），送回askServiceChoice继续问；已经有结论（free或者
 // subscribed）就放行到generatePlan。
 function routeAfterServiceChoice(state) {
+  if (state.pendingServiceChoice?.deferred || state.pendingServiceChoice?.paused) return '__end__';
   return state.pendingServiceChoice ? 'askServiceChoice' : 'generatePlan';
 }
 
@@ -70,7 +154,18 @@ function routeAfterAskingServiceChoice(state) {
 
 const workflow = new StateGraph(DietState)
   .addNode('provideEmotionalSupport', provideEmotionalSupport)
+  .addNode('detectDirectQuestion', detectDirectQuestion)
+  .addNode('answerDirectQuestion', answerDirectQuestion)
   .addNode('answerFollowUp', answerFollowUp)
+  .addNode('finalizeInitialLongTermPlan', finalizeInitialLongTermPlan)
+  .addNode('clearInitialLongTermPlanCommand', clearInitialLongTermPlanCommand)
+  .addNode('startPlanRevision', startPlanRevision)
+  .addNode('resolvePlanRevision', resolvePlanRevision)
+  .addNode('preparePlanRevision', prepareFromConfirmedRequest)
+  .addNode('resolvePlanRevisionPreparation', resolvePlanRevisionPreparation)
+  .addNode('generatePlanRevision', generatePlanRevision)
+  .addNode('clearPlanRevisionDraftCommand', clearPlanRevisionDraftCommand)
+  .addNode('retryPlanRevisionDelivery', retryPlanRevisionDelivery)
   .addNode('resolvePendingConfirmation', resolvePendingConfirmation)
   .addNode('extractSlots', extractSlots)
   .addNode('conflictRouter', conflictRouter)
@@ -83,12 +178,32 @@ const workflow = new StateGraph(DietState)
   .addNode('resolveCycleOnboarding', resolveCycleOnboarding)
   .addNode('generatePlan', generatePlan)
   .addEdge('__start__', 'provideEmotionalSupport')
-  .addConditionalEdges('provideEmotionalSupport', routeEntry, {
+  .addEdge('provideEmotionalSupport', 'detectDirectQuestion')
+  .addConditionalEdges('detectDirectQuestion', routeEntry, {
+    answerDirectQuestion: 'answerDirectQuestion',
     resolvePendingConfirmation: 'resolvePendingConfirmation',
     resolveServiceChoice: 'resolveServiceChoice',
     resolveBodyOnboarding: 'resolveBodyOnboarding',
     resolveCycleOnboarding: 'resolveCycleOnboarding',
+    startPlanRevision: 'startPlanRevision',
+    resolvePlanRevision: 'resolvePlanRevision',
+    resolvePlanRevisionPreparation: 'resolvePlanRevisionPreparation',
+    clearPlanRevisionDraftCommand: 'clearPlanRevisionDraftCommand',
+    retryPlanRevisionDelivery: 'retryPlanRevisionDelivery',
+    clearInitialLongTermPlanCommand: 'clearInitialLongTermPlanCommand',
+    answerFollowUp: 'answerFollowUp',
     extractSlots: 'extractSlots',
+  })
+  .addConditionalEdges('answerDirectQuestion', routeAfterDirectQuestion, {
+    resolvePendingConfirmation: 'resolvePendingConfirmation',
+    resolveServiceChoice: 'resolveServiceChoice',
+    resolveBodyOnboarding: 'resolveBodyOnboarding',
+    resolveCycleOnboarding: 'resolveCycleOnboarding',
+    startPlanRevision: 'startPlanRevision',
+    resolvePlanRevision: 'resolvePlanRevision',
+    resolvePlanRevisionPreparation: 'resolvePlanRevisionPreparation',
+    extractSlots: 'extractSlots',
+    __end__: '__end__',
   })
   .addEdge('resolvePendingConfirmation', 'extractSlots')
   .addEdge('extractSlots', 'conflictRouter')
@@ -105,6 +220,7 @@ const workflow = new StateGraph(DietState)
   .addConditionalEdges('resolveServiceChoice', routeAfterServiceChoice, {
     askServiceChoice: 'askServiceChoice',
     generatePlan: 'generatePlan',
+    __end__: '__end__',
   })
   .addEdge('askNextQuestion', '__end__')
   .addConditionalEdges('askServiceChoice', routeAfterAskingServiceChoice, {
@@ -115,7 +231,29 @@ const workflow = new StateGraph(DietState)
   .addEdge('answerFollowUp', '__end__')
   .addEdge('resolveBodyOnboarding', '__end__')
   .addEdge('askConfirmation', '__end__')
-  .addEdge('resolveCycleOnboarding', '__end__');
+  .addConditionalEdges('resolveCycleOnboarding', routeAfterCycleOnboarding, {
+    finalizeInitialLongTermPlan: 'finalizeInitialLongTermPlan',
+    __end__: '__end__',
+  })
+  .addEdge('finalizeInitialLongTermPlan', '__end__')
+  .addEdge('clearInitialLongTermPlanCommand', 'answerFollowUp');
+workflow
+  .addEdge('startPlanRevision', '__end__')
+  .addConditionalEdges('resolvePlanRevision', routeAfterPlanRevision, {
+    preparePlanRevision: 'preparePlanRevision',
+    __end__: '__end__',
+  })
+  .addConditionalEdges('preparePlanRevision', routeAfterRevisionPreparation, {
+    generatePlanRevision: 'generatePlanRevision',
+    __end__: '__end__',
+  })
+  .addConditionalEdges('resolvePlanRevisionPreparation', routeAfterRevisionPreparation, {
+    generatePlanRevision: 'generatePlanRevision',
+    __end__: '__end__',
+  })
+  .addEdge('generatePlanRevision', '__end__')
+  .addEdge('clearPlanRevisionDraftCommand', 'extractSlots')
+  .addEdge('retryPlanRevisionDelivery', '__end__');
 
 const graph = workflow.compile();
 
@@ -124,4 +262,11 @@ const graph = workflow.compile();
 // 而这里现成的 graph 是不带 checkpointer 的裸版本，manual-tests 里的
 // 脚本都是手动在调用方自己传状态，不需要 checkpointer，两种用法并存、
 // 互不影响）。
-module.exports = { graph, workflow };
+module.exports = {
+  graph,
+  workflow,
+  routeEntry,
+  routeAfterDirectQuestion,
+  routeAfterServiceChoice,
+  shouldRouteReturningUserToFollowUp,
+};

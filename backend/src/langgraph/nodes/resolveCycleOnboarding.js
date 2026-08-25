@@ -22,6 +22,14 @@ const CYCLE_RETRY_MESSAGE =
   '3. 如果不规律，尽量再提供前一到两次开始日期，或者大概间隔天数\n\n' +
   '不记得可以直接说“不记得”，不想记录也可以回复“跳过”。';
 
+// 日期是建档里的关键原始数据，不能把是否识别成功完全交给模型。
+// 这里只保留用户明确写出的“X月X日/号”原文，不推算年份，也不会把
+// “来了三个月”误认成周期长度或三个日期。
+function extractExplicitCycleDates(userText = '') {
+  const matches = String(userText).match(/(?:今年|去年|本月|上月|上个月|前一次|上一次|大约|约)?\s*\d{1,2}\s*月\s*\d{1,2}\s*(?:日|号)/g) || [];
+  return [...new Set(matches.map((value) => value.replace(/\s+/g, '').trim()))];
+}
+
 function mergeCycleProfile(existing = {}, extracted = {}, userText = '') {
   return {
     regularity: extracted.regularity !== 'unknown' ? extracted.regularity : (existing.regularity || 'unknown'),
@@ -50,9 +58,14 @@ async function resolveCycleOnboarding(state) {
   const userText = getMessageText(findLastUserMessage(state.messages)).trim();
   if (DECLINE_REGEX.test(userText)) {
     return {
-      messages: [{ role: 'ai', content: '好，这部分先不记录～之后愿意补充时再告诉我就可以。' }],
-      cycleOnboardingStatus: 'declined',
-      pendingCycleOnboarding: null,
+      messages: [{
+        role: 'ai',
+        content: '明白。不过经期和近期身体状态是当前女生长期规划需要完成的建档信息；在这项完成前，我不会启动长期方案或14天试用。你今天方便时再回来继续填写就好。',
+      }],
+      cycleOnboardingStatus: 'required_missing',
+      pendingCycleOnboarding: {
+        askedCount: (state.pendingCycleOnboarding?.askedCount || 1) + 1,
+      },
     };
   }
 
@@ -65,6 +78,9 @@ async function resolveCycleOnboarding(state) {
     },
     { role: 'human', content: userText },
   ]);
+  extracted.startDates = [
+    ...new Set([...(extracted.startDates || []), ...extractExplicitCycleDates(userText)]),
+  ];
   const profile = mergeCycleProfile(state.menstrualProfile || {}, extracted, userText);
 
   if (!cycleProfileNeedsMore(profile)) {
@@ -99,4 +115,5 @@ module.exports = {
   cycleProfileNeedsMore,
   buildCycleRecordAck,
   CYCLE_RETRY_MESSAGE,
+  extractExplicitCycleDates,
 };
