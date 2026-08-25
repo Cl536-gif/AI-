@@ -27,6 +27,11 @@ DECLARE
   v_command jsonb;
   v_plan_id varchar;
 BEGIN
+  PERFORM app.set_current_user_service_status(
+    '{"status":"subscribed"}'::jsonb,
+    '004i_sandbox_service'
+  );
+
   v_plan := app.create_current_user_plan_draft(
     '{"plan":{"label":"004i-draft-a"},"changeReason":"004i_revision"}'::jsonb,
     '2026-08-25T02:00:00Z'::timestamptz

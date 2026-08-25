@@ -13,6 +13,8 @@ for (const fragment of [
   '004i_verify_a',
   '004i_verify_b',
   'app.verify_004i_plan_a',
+  'app.set_current_user_service_status(',
+  '004i_sandbox_service',
   'draft_command_recorded',
   'draft_retry_idempotent',
   'command_advanced_to_delivered',
