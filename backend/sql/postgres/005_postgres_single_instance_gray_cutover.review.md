@@ -73,3 +73,14 @@ TENCENT_PG_POOL_MAX=1
 - 不把PostgreSQL设为默认Provider。
 - 不把`isTencentPostgresCutoverReady()`改为true。
 - 不执行全量或多实例切换。
+
+## 8. 005b灰度验证器
+
+在真正的PostgreSQL单实例修订中，先显式设置一次性验证确认变量，再运行：
+
+```sh
+RUN_005B_CANARY_VERIFY=CONFIRMED_POSTGRES_SINGLE_INSTANCE_CANARY \
+  node manual-test-postgres-single-instance-canary-cloud.js
+```
+
+验证器要求当前修订已经选择PostgreSQL并通过全部门禁，随后检查数据库身份和空用户上下文。在同一个最终`ROLLBACK`的事务中验证用户、活动设置、档案及建议读写，再从新事务证明三类记录均为0。输出只包含安全布尔结果、计数和进程标识，不打印测试ID、SQL参数或连接配置。
