@@ -101,7 +101,22 @@ BEGIN
       NULL
     FROM due_users AS due
     ON CONFLICT (user_id, dedupe_key) DO NOTHING
-    RETURNING notification_id
+    RETURNING *
+  ), resolved_notifications AS (
+    SELECT inserted.*
+    FROM inserted
+    UNION ALL
+    SELECT notification.*
+    FROM due_users AS due
+    JOIN app.user_notifications AS notification
+      ON notification.user_id = due.user_id
+     AND notification.dedupe_key = due.dedupe_key
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM inserted
+      WHERE inserted.user_id = due.user_id
+        AND inserted.dedupe_key = due.dedupe_key
+    )
   )
   SELECT COALESCE(
     jsonb_agg(
@@ -120,10 +135,7 @@ BEGIN
     '[]'::jsonb
   )
   INTO v_result
-  FROM due_users AS due
-  JOIN app.user_notifications AS notification
-    ON notification.user_id = due.user_id
-   AND notification.dedupe_key = due.dedupe_key;
+  FROM resolved_notifications AS notification;
 
   RETURN v_result;
 END;

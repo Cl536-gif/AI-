@@ -98,7 +98,9 @@ WITH table_checks AS (
       (procedure.proname = 'enqueue_due_renewal_reminders'
         AND procedure.prosrc LIKE '%trial_active%'
         AND procedure.prosrc LIKE '%trial_ends_at > v_now%'
-        AND procedure.prosrc LIKE '%ON CONFLICT%')
+        AND procedure.prosrc LIKE '%ON CONFLICT%'
+        AND procedure.prosrc LIKE '%RETURNING *%'
+        AND procedure.prosrc LIKE '%resolved_notifications%')
       OR (procedure.proname = 'list_pending_notifications'
         AND procedure.prosrc LIKE '%status = ''pending''%')
       OR (procedure.proname = 'mark_notification_sent'

@@ -27,6 +27,7 @@ for (const fragment of [
   'public_cannot_execute_functions',
   'functions_owned_and_secured',
   'queue_definitions_valid',
+  'resolved_notifications',
   'invalid_notification_row_count',
 ]) {
   assert(sql.includes(fragment), `004j后置检查缺少关键片段：${fragment}`);
