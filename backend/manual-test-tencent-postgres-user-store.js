@@ -187,6 +187,47 @@ async function main() {
         },
       ] };
     }
+    if (text.includes('record_current_user_advice')) {
+      const input = JSON.parse(values[0]);
+      assert.deepStrictEqual(Object.keys(input).sort(), [
+        'adviceType',
+        'content',
+        'idempotencyKey',
+        'metadata',
+        'serviceMode',
+        'threadId',
+      ]);
+      return { rows: [{ result: {
+        adviceId: 'advice-rpc-1',
+        userId: 'acct:user-1',
+        ...input,
+        createdAt: '2026-08-24T07:00:00.000+00:00',
+      } }] };
+    }
+    if (text.includes('FROM app.user_advice_history')) {
+      return { rows: [
+        {
+          advice_id: 'advice-2',
+          advice_type: 'ad_hoc_meal_advice',
+          service_mode: 'free',
+          content: '晚餐增加蔬菜',
+          metadata: { source: 'graph' },
+          thread_id: 'thread-1',
+          idempotency_key: 'advice-key-2',
+          created_at: new Date('2026-08-24T08:00:00.000Z'),
+        },
+        {
+          advice_id: 'advice-1',
+          advice_type: 'initial_meal_plan',
+          service_mode: 'free',
+          content: '初始饮食建议',
+          metadata: {},
+          thread_id: null,
+          idempotency_key: 'advice-key-1',
+          created_at: new Date('2026-08-24T07:00:00.000Z'),
+        },
+      ] };
+    }
     if (text.includes('FROM app.users WHERE user_id = $1 LIMIT 1')) {
       return { rows: [{
         timezone: 'Asia/Shanghai',
@@ -444,6 +485,45 @@ async function main() {
     /能量计算时间格式不正确/
   );
 
+  const recordedAdvice = await store.recordAdvice('acct:user-1', {
+    adviceType: 'initial_meal_plan',
+    serviceMode: 'free',
+    content: '  初始饮食建议  ',
+    metadata: { source: 'graph' },
+    threadId: ' thread-1 ',
+    idempotencyKey: ' advice-key-1 ',
+    createdAt: '2026-08-24T15:00:00+08:00',
+    ignoredDomainField: true,
+  });
+  assert.strictEqual(recordedAdvice.adviceId, 'advice-rpc-1');
+  assert.strictEqual(recordedAdvice.content, '初始饮食建议');
+  assert.strictEqual(recordedAdvice.createdAt, '2026-08-24T07:00:00.000Z');
+  const adviceSaveCall = calls.find((call) =>
+    call.text.includes('record_current_user_advice')
+  );
+  assert.strictEqual(
+    Object.hasOwn(JSON.parse(adviceSaveCall.values[0]), 'ignoredDomainField'),
+    false
+  );
+  assert.strictEqual(adviceSaveCall.values[1], '2026-08-24T07:00:00.000Z');
+
+  const adviceHistory = await store.listAdviceHistory('acct:user-1', { limit: 999 });
+  assert.strictEqual(adviceHistory.length, 2);
+  assert.strictEqual(adviceHistory[0].adviceId, 'advice-2');
+  assert.strictEqual(adviceHistory[1].threadId, null);
+  const adviceHistoryCall = calls.find((call) =>
+    call.text.includes('FROM app.user_advice_history')
+  );
+  assert.deepStrictEqual(adviceHistoryCall.values, ['acct:user-1', 200]);
+  await assert.rejects(
+    store.recordAdvice('acct:user-1', { content: '', idempotencyKey: 'key' }),
+    /建议内容不能为空/
+  );
+  await assert.rejects(
+    store.recordAdvice('acct:user-1', { content: 'x', idempotencyKey: 'key', metadata: [] }),
+    /建议元数据格式不正确/
+  );
+
   const unavailableMethods = USER_STORE_METHODS
     .filter((methodName) => !DATABASE_READY_METHODS.includes(methodName));
   for (const methodName of unavailableMethods) {
@@ -453,7 +533,7 @@ async function main() {
         error.methodName === methodName
     );
   }
-  assert.strictEqual(unavailableMethods.length, 9);
+  assert.strictEqual(unavailableMethods.length, 4);
   await assert.rejects(store.resolveAnonymousIdentity('raw-device-id'), /摘要格式不正确/);
   await assert.rejects(
     store.mergeAnonymousIntoAccount('anon:guest-1', 'acct:forged'),
@@ -466,10 +546,10 @@ async function main() {
   assert(calls.every(({ values }) => Array.isArray(values)));
 
   console.log(JSON.stringify({
-    batch: '004i-adapter',
+    batch: '004k-adapter',
     status: 'PASS',
-    implementedMethodCount: 29,
-    unavailableMethodCount: 9,
+    implementedMethodCount: 34,
+    unavailableMethodCount: 4,
     parameterizedQueriesOnly: true,
     productionAdapterSelectionChanged: false,
   }));

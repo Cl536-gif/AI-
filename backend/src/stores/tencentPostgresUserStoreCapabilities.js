@@ -28,6 +28,8 @@ const DATABASE_READY_METHODS = Object.freeze([
   'enqueueDueRenewalReminders',
   'listPendingNotifications',
   'markNotificationSent',
+  'recordAdvice',
+  'listAdviceHistory',
   'appendEvent',
   'getEvent',
   'listEvents',
@@ -36,8 +38,6 @@ const DATABASE_READY_METHODS = Object.freeze([
 ]);
 
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
-  'recordAdvice',
-  'listAdviceHistory',
   'listUserSummaries',
   'getUserDataSnapshot',
 ]);

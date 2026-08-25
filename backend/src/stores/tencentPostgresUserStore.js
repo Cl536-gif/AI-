@@ -147,6 +147,21 @@ function mapNotification(value) {
   };
 }
 
+function mapAdvice(userId, value) {
+  if (!value) return null;
+  return {
+    adviceId: value.adviceId ?? value.advice_id,
+    userId,
+    adviceType: value.adviceType ?? value.advice_type,
+    serviceMode: value.serviceMode ?? value.service_mode,
+    content: value.content,
+    metadata: value.metadata || {},
+    threadId: value.threadId ?? value.thread_id ?? null,
+    idempotencyKey: value.idempotencyKey ?? value.idempotency_key,
+    createdAt: normalizeTimestamp(value.createdAt ?? value.created_at),
+  };
+}
+
 function normalizeQueueTimestamp(value, label) {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) throw new Error(`${label}格式不正确`);
@@ -763,6 +778,56 @@ function createTencentPostgresUserStore({
     });
   }
 
+  async function recordAdvice(userId, {
+    adviceType = 'meal_advice',
+    serviceMode = 'free',
+    content,
+    metadata = {},
+    threadId = null,
+    idempotencyKey,
+    createdAt = new Date().toISOString(),
+  } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const normalizedContent = String(content || '').trim();
+    const normalizedKey = String(idempotencyKey || '').trim();
+    if (!normalizedContent) throw new Error('建议内容不能为空');
+    if (!normalizedKey) throw new Error('建议幂等键不能为空');
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new Error('建议元数据格式不正确');
+    }
+    const recordedAt = new Date(createdAt);
+    if (Number.isNaN(recordedAt.getTime())) throw new Error('建议记录时间格式不正确');
+    const payload = {
+      adviceType: String(adviceType || 'meal_advice').trim() || 'meal_advice',
+      serviceMode: String(serviceMode || 'free').trim() || 'free',
+      content: normalizedContent,
+      metadata,
+      threadId: threadId == null ? null : (String(threadId).trim() || null),
+      idempotencyKey: normalizedKey,
+    };
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT app.record_current_user_advice($1::jsonb, $2::timestamptz) AS result',
+        [JSON.stringify(payload), recordedAt.toISOString()]
+      );
+      const saved = mapAdvice(normalizedUserId, firstRpcResult(result));
+      if (!saved) throw new Error('PostgreSQL建议写入未返回结果');
+      return saved;
+    });
+  }
+
+  async function listAdviceHistory(userId, { limit = 50 } = {}) {
+    const normalizedUserId = UserIdSchema.parse(userId);
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    return runUserTransaction(normalizedUserId, async (client) => {
+      const result = await client.query(
+        'SELECT advice_id, advice_type, service_mode, content, metadata, thread_id, idempotency_key, created_at FROM app.user_advice_history WHERE user_id = $1 ORDER BY created_at DESC, advice_id DESC LIMIT $2',
+        [normalizedUserId, safeLimit]
+      );
+      return result.rows.map((row) => mapAdvice(normalizedUserId, row));
+    });
+  }
+
   async function appendEvent(input) {
     const parsed = UserEventSchema.parse(input);
     const { userId, ...event } = parsed;
@@ -875,6 +940,8 @@ function createTencentPostgresUserStore({
     enqueueDueRenewalReminders,
     listPendingNotifications,
     markNotificationSent,
+    recordAdvice,
+    listAdviceHistory,
     appendEvent,
     getEvent,
     listEvents,
