@@ -5,18 +5,21 @@
 // 完整信息被无视重新采集、改口未被识别这三个纯提示词架构下反复出现
 // 的状态一致性问题。
 //
-// 服务端用 MemorySaver（内存版 checkpointer）按 threadId 维护每个会话
-// 的状态，客户端只需要带上 threadId（第一次不传会自动生成，返回值里
-// 带回去，后续轮次必须带上同一个才能延续对话），不需要像 /api/chat-local
-// 那样每轮把完整历史传回来。
-//
-// 注意：MemorySaver 是内存存储，服务重启后所有会话状态会丢失，仅供
-// 对比测试用，不是生产级持久化方案。
+// checkpointer由Provider选择：默认SQLite部署仍使用MemorySaver；只有满足
+// 独立确认、schema、身份作用域和拓扑门禁的受控灰度才可使用PostgreSQL。
+// 双实例HTTP灰度还必须通过服务端令牌，并在完整graph invoke外持有同一
+// thread的advisory lock。客户端仍只携带公开threadId，数据库只接触服务端
+// 派生的内部thread键。
 const express = require('express');
 const crypto = require('crypto');
 const { workflow } = require('../langgraph/graph');
 const { createLangGraphCheckpointer } = require('../langgraph/checkpointerProvider');
 const { resolveInternalThreadId } = require('../langgraph/threadScope');
+const {
+  TOKEN_HEADER,
+  assertHttpCanaryRequest,
+  invokeGraphWithCheckpointerPolicy,
+} = require('../langgraph/httpCanaryBoundary');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
 const userService = require('../services/userService');
@@ -129,6 +132,18 @@ router.post('/', async (req, res, next) => {
     }
   }
 
+  try {
+    assertHttpCanaryRequest({
+      policy: checkpointerPolicy,
+      token: req.get(TOKEN_HEADER),
+    });
+  } catch (error) {
+    if (Number.isInteger(error?.statusCode)) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    return next(error);
+  }
+
   const resolvedThreadId = threadId && threadId.trim() ? threadId.trim() : crypto.randomUUID();
 
   try {
@@ -201,8 +216,9 @@ router.post('/', async (req, res, next) => {
     }
     inputMessages.push({ role: 'human', content: graphMessage });
     const isHomepageHandoff = !threadId && introAlreadyShown;
-    const result = await graphWithCheckpointer.invoke(
-      {
+    const result = await invokeGraphWithCheckpointerPolicy({
+      graph: graphWithCheckpointer,
+      input: {
         messages: inputMessages,
         longTermContext,
         // 首页的“食堂还是外卖”由 /api/chat 发出，第一条答案才切到
@@ -210,8 +226,9 @@ router.post('/', async (req, res, next) => {
         // 关键词识别，但“都吃/换着吃”这类依赖上下文的省略回答会丢失。
         ...(isHomepageHandoff ? { lastAskedSlot: 'scene' } : {}),
       },
-      config
-    );
+      config,
+      policy: checkpointerPolicy,
+    });
     const persistence = anonymousUserId
       ? await persistGraphTurn(
           anonymousUserId,

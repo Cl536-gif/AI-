@@ -3,8 +3,10 @@ const {
 } = require('./tencentPostgresUserStoreCapabilities');
 
 const SINGLE_INSTANCE_CANARY_MODE = 'single_instance_canary';
+const DUAL_INSTANCE_HTTP_CANARY_MODE = 'dual_instance_http_canary';
 const FULL_CUTOVER_MODE = 'full';
 const SINGLE_INSTANCE_CONFIRMATION = 'postgres-single-instance-canary';
+const DUAL_INSTANCE_HTTP_CONFIRMATION = 'postgres-dual-instance-http-canary';
 const FULL_CUTOVER_CONFIRMATION = 'postgres-full-cutover';
 
 function createCutoverError(code, message) {
@@ -60,6 +62,34 @@ function assertTencentPostgresCutoverAllowed({
     return Object.freeze({ mode, maxInstances, poolMax, allowed: true });
   }
 
+  if (mode === DUAL_INSTANCE_HTTP_CANARY_MODE) {
+    if (confirmation !== DUAL_INSTANCE_HTTP_CONFIRMATION) {
+      throw createCutoverError(
+        'POSTGRES_HTTP_CANARY_CONFIRMATION_REQUIRED',
+        '双实例PostgreSQL HTTP灰度需要独立显式确认'
+      );
+    }
+    if (String(env.RUN_005H_DEDICATED_SERVICE || '').trim()
+        !== 'CONFIRMED_005H_DEDICATED_HTTP_CANARY_SERVICE') {
+      throw createCutoverError(
+        'POSTGRES_HTTP_CANARY_DEDICATED_SERVICE_REQUIRED',
+        '双实例HTTP灰度只能在独立验证服务运行'
+      );
+    }
+    const maxInstances = parseRequiredPositiveInteger(
+      env.TENCENT_PG_HTTP_CANARY_MAX_INSTANCES,
+      'TENCENT_PG_HTTP_CANARY_MAX_INSTANCES'
+    );
+    const poolMax = parseRequiredPositiveInteger(env.TENCENT_PG_POOL_MAX, 'TENCENT_PG_POOL_MAX');
+    if (maxInstances !== 2 || poolMax !== 2) {
+      throw createCutoverError(
+        'POSTGRES_HTTP_CANARY_SCOPE_INVALID',
+        '双实例HTTP灰度必须声明实例上限2且每实例连接池上限2'
+      );
+    }
+    return Object.freeze({ mode, maxInstances, poolMax, allowed: true, productionReady: false });
+  }
+
   if (mode === FULL_CUTOVER_MODE) {
     if (confirmation !== FULL_CUTOVER_CONFIRMATION) {
       throw createCutoverError(
@@ -84,8 +114,10 @@ function assertTencentPostgresCutoverAllowed({
 
 module.exports = {
   SINGLE_INSTANCE_CANARY_MODE,
+  DUAL_INSTANCE_HTTP_CANARY_MODE,
   FULL_CUTOVER_MODE,
   SINGLE_INSTANCE_CONFIRMATION,
+  DUAL_INSTANCE_HTTP_CONFIRMATION,
   FULL_CUTOVER_CONFIRMATION,
   assertTencentPostgresCutoverAllowed,
 };

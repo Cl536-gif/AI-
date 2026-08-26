@@ -1,5 +1,6 @@
 const { MemorySaver } = require('@langchain/langgraph');
 const {
+  DUAL_INSTANCE_HTTP_CANARY_MODE,
   SINGLE_INSTANCE_CANARY_MODE,
   assertTencentPostgresCutoverAllowed,
 } = require('../stores/tencentPostgresCutoverGate');
@@ -8,6 +9,8 @@ const MEMORY_CHECKPOINTER = 'memory';
 const POSTGRES_CHECKPOINTER = 'postgres';
 const POSTGRES_CHECKPOINTER_CONFIRMATION = 'postgres-shared-checkpointer';
 const POSTGRES_CHECKPOINTER_CANARY_MODE = 'single_instance_canary';
+const POSTGRES_CHECKPOINTER_HTTP_CANARY_MODE = 'dual_instance_http_canary';
+const POSTGRES_THREAD_LOCK_CONFIRMATION = 'postgres-thread-lock-http-canary';
 
 function createCheckpointerError(code, message) {
   const error = new Error(message);
@@ -50,25 +53,51 @@ function resolveLangGraphCheckpointerPolicy({ env = process.env } = {}) {
       );
     }
     const mode = normalize(env.LANGGRAPH_CHECKPOINTER_MODE);
-    if (mode !== POSTGRES_CHECKPOINTER_CANARY_MODE) {
+    if (![POSTGRES_CHECKPOINTER_CANARY_MODE, POSTGRES_CHECKPOINTER_HTTP_CANARY_MODE].includes(mode)) {
       throw createCheckpointerError(
         'LANGGRAPH_CHECKPOINTER_MODE_REQUIRED',
         '共享PostgreSQL checkpointer首次验证必须使用单实例canary模式'
       );
     }
-    if (String(env.LANGGRAPH_CHECKPOINTER_MAX_INSTANCES || '').trim() !== '1') {
+    const expectedInstances = mode === POSTGRES_CHECKPOINTER_HTTP_CANARY_MODE ? 2 : 1;
+    if (String(env.LANGGRAPH_CHECKPOINTER_MAX_INSTANCES || '').trim() !== String(expectedInstances)) {
       throw createCheckpointerError(
         'LANGGRAPH_CHECKPOINTER_SCOPE_INVALID',
-        '共享PostgreSQL checkpointer首次验证必须声明实例上限为1'
+        `共享PostgreSQL checkpointer当前模式必须声明实例上限为${expectedInstances}`
       );
+    }
+    const httpCanary = mode === POSTGRES_CHECKPOINTER_HTTP_CANARY_MODE;
+    if (httpCanary) {
+      if (userStoreAdapter !== 'tencent-postgres') {
+        throw createCheckpointerError(
+          'LANGGRAPH_HTTP_CANARY_POSTGRES_STORE_REQUIRED',
+          '双实例HTTP灰度必须使用共享PostgreSQL UserStore'
+        );
+      }
+      if (String(env.LANGGRAPH_THREAD_LOCK_CONFIRM || '').trim()
+          !== POSTGRES_THREAD_LOCK_CONFIRMATION) {
+        throw createCheckpointerError(
+          'LANGGRAPH_HTTP_CANARY_LOCK_CONFIRMATION_REQUIRED',
+          '双实例HTTP灰度需要独立确认同thread锁'
+        );
+      }
+      const cutover = assertTencentPostgresCutoverAllowed({ env });
+      if (cutover.mode !== DUAL_INSTANCE_HTTP_CANARY_MODE) {
+        throw createCheckpointerError(
+          'LANGGRAPH_HTTP_CANARY_CUTOVER_MODE_MISMATCH',
+          'UserStore与checkpointer灰度模式不一致'
+        );
+      }
     }
     return Object.freeze({
       backend,
       userStoreAdapter,
       schemaVersion: POSTGRES_CHECKPOINTER_VERSION,
       mode,
-      maxInstances: 1,
+      maxInstances: expectedInstances,
       shared: true,
+      requiresThreadLock: httpCanary,
+      httpCanary,
       productionReady: false,
     });
   }
@@ -134,6 +163,8 @@ module.exports = {
   POSTGRES_CHECKPOINTER,
   POSTGRES_CHECKPOINTER_CONFIRMATION,
   POSTGRES_CHECKPOINTER_CANARY_MODE,
+  POSTGRES_CHECKPOINTER_HTTP_CANARY_MODE,
+  POSTGRES_THREAD_LOCK_CONFIRMATION,
   resolveLangGraphCheckpointerPolicy,
   createLangGraphCheckpointer,
 };
