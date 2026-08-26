@@ -1,0 +1,6 @@
+docs/acceptance/005j-sqlite-data-disposition/
+├── MANIFEST.sha256
+├── README.md
+├── TREE.txt
+├── evidence-index.csv
+└── raw-results.txt

@@ -1,0 +1,8 @@
+evidence_id,category,result,source
+005j-01,local_inventory,PASS,read-only SQLite aggregate inventory
+005j-02,local_integrity,PASS,SQLite integrity foreign-key and JSON checks
+005j-03,cloudbase_inventory,PASS,current formal single-Pod read-only aggregate inventory
+005j-04,postgres_target_inventory,PASS,DMS read-only 23-table counts
+005j-05,explicit_disposition,PASS,project-owner migration disposition approval
+005j-06,privacy_boundary,PASS,no row content or sensitive identifiers archived
+005j-07,release_boundary,PASS,full PostgreSQL cutover remains closed
