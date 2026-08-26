@@ -18,7 +18,7 @@
 2. 在同一临时服务部署已验证的PostgreSQL HTTP灰度修订；只使用固定测试身份并证明目标产生预期写入。
 3. 冻结测试写入，把流量滚动切换到由同一固定标签重新构建的SQLite回滚修订。
 4. 在回滚修订运行`rollback`；构建摘要、SQLite环境、`/api/health`和`/api/ready`必须全部PASS，且修订指纹必须不同于基线。
-5. DMS只读证明PostgreSQL灰度写入在应用回滚后仍存在；应用回滚不得自动删除、复制或改写PostgreSQL数据。
+5. DMS执行`005k_post_rollback_residue.review.sql`，只读证明PostgreSQL灰度写入在应用回滚后仍存在；应用回滚不得自动删除、复制或改写PostgreSQL数据。
 6. 使用该灰度批次自己的清理脚本删除固定测试数据，再由DMS证明业务表和checkpointer残留为0。
 7. 删除独立临时服务；正式服务和full门禁保持不变。
 
