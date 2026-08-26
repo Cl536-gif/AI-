@@ -127,6 +127,7 @@ async function testReadinessHandlerIsGenericAndRedacted() {
   const logger = createLogger();
   const handler = createPostgresReadinessHandler({
     logger,
+    env: { USER_STORE_ADAPTER: 'tencent-postgres' },
     check: () => checkPostgresReadiness({ pool: new FakeReadinessPool(client) }),
   });
   const response = createResponse();
@@ -142,9 +143,22 @@ async function testReadinessHandlerIsGenericAndRedacted() {
   assert.strictEqual(client.releaseCalls[0], queryError);
 
   const successResponse = createResponse();
-  await createPostgresReadinessHandler({ check: async () => ({ ready: true }) })({}, successResponse);
+  await createPostgresReadinessHandler({
+    env: { USER_STORE_ADAPTER: 'tencent-postgres' },
+    check: async () => ({ ready: true }),
+  })({}, successResponse);
   assert.strictEqual(successResponse.statusCode, 200);
   assert.deepStrictEqual(successResponse.body, { status: 'ready' });
+
+  let sqliteCheckCalls = 0;
+  const sqliteResponse = createResponse();
+  await createPostgresReadinessHandler({
+    env: { USER_STORE_ADAPTER: 'sqlite' },
+    check: async () => { sqliteCheckCalls += 1; throw new Error('must not run'); },
+  })({}, sqliteResponse);
+  assert.strictEqual(sqliteResponse.statusCode, 200);
+  assert.deepStrictEqual(sqliteResponse.body, { status: 'ready' });
+  assert.strictEqual(sqliteCheckCalls, 0);
 }
 
 function testUnknownErrorsUseSafeDiagnosticCategories() {

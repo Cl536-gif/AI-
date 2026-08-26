@@ -82,12 +82,17 @@ async function checkPostgresReadiness({
 function createPostgresReadinessHandler({
   check = checkPostgresReadiness,
   logger = console,
+  env = process.env,
 } = {}) {
   if (typeof check !== 'function') {
     throw new TypeError('PostgreSQL就绪检查器必须是函数');
   }
 
   return async function postgresReadinessHandler(req, res) {
+    const adapter = String(env.USER_STORE_ADAPTER || 'sqlite').trim().toLowerCase();
+    if (adapter === 'sqlite' || adapter === 'local') {
+      return res.status(200).json({ status: 'ready' });
+    }
     try {
       await check();
       return res.status(200).json({ status: 'ready' });
