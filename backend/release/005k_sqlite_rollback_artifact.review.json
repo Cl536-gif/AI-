@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "artifactId": "005k-sqlite-rollback-v2",
+  "artifactId": "005k-sqlite-rollback-v3",
   "source": {
-    "gitTag": "sqlite-rollback-005k-v2",
+    "gitTag": "sqlite-rollback-005k-v3",
     "buildContext": "backend",
     "files": [
       {

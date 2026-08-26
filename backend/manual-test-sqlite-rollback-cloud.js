@@ -28,6 +28,23 @@ function assert005kCloudEnvironment(env = process.env, phase) {
   return Object.freeze({ artifact, environment, phase });
 }
 
+function resolveCloudRevisionIdentity(env = process.env) {
+  const kRevision = String(env.K_REVISION || '').trim();
+  if (kRevision) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,252}$/.test(kRevision)) {
+      fail('CLOUD_REVISION_ID_INVALID');
+    }
+    return Object.freeze({ value: kRevision, source: 'k_revision' });
+  }
+  const hostname = String(env.HOSTNAME || '').trim();
+  if (!/^[a-z0-9][a-z0-9-]{6,252}-[a-z0-9]{5}$/.test(hostname)) {
+    fail('CLOUD_REVISION_ID_REQUIRED');
+  }
+  const revisionIdentity = hostname.replace(/-[a-z0-9]{5}$/, '');
+  if (revisionIdentity.length < 3) fail('CLOUD_REVISION_ID_REQUIRED');
+  return Object.freeze({ value: revisionIdentity, source: 'cloudbase_hostname' });
+}
+
 async function fetchLocal(pathname, port) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -53,8 +70,7 @@ async function run(phase = process.argv[2]) {
     if (result.status !== check.expectedStatus) fail('ROLLBACK_HEALTH_CHECK_FAILED');
     healthResults.push({ path: check.path, status: result.status });
   }
-  const revisionName = String(process.env.K_REVISION || '').trim();
-  if (!revisionName) fail('CLOUD_REVISION_ID_REQUIRED');
+  const revision = resolveCloudRevisionIdentity(process.env);
 
   console.log(JSON.stringify({
     batch: '005k-sqlite-rollback-cloud',
@@ -66,7 +82,8 @@ async function run(phase = process.argv[2]) {
     adapter: verified.environment.adapter,
     checkpointerBackend: verified.environment.checkpointerBackend,
     healthPassed: healthResults.every(({ status }) => status === 200),
-    revisionFingerprint: sha256(revisionName),
+    revisionFingerprint: sha256(revision.value),
+    revisionIdentitySource: revision.source,
     postgresNetworkUsed: false,
     postgresRowsMutated: false,
   }));
@@ -88,4 +105,5 @@ module.exports = {
   DEDICATED_CONFIRMATION,
   VERIFY_CONFIRMATION,
   assert005kCloudEnvironment,
+  resolveCloudRevisionIdentity,
 };

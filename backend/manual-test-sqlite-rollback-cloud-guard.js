@@ -5,6 +5,7 @@ const {
   DEDICATED_CONFIRMATION,
   VERIFY_CONFIRMATION,
   assert005kCloudEnvironment,
+  resolveCloudRevisionIdentity,
 } = require('./manual-test-sqlite-rollback-cloud');
 
 const validEnv = {
@@ -23,12 +24,23 @@ function expectCode(env, phase, code) {
 
 assert.strictEqual(assert005kCloudEnvironment(validEnv, 'baseline').environment.adapter, 'sqlite');
 assert.strictEqual(assert005kCloudEnvironment(validEnv, 'rollback').phase, 'rollback');
+assert.strictEqual(resolveCloudRevisionIdentity(validEnv).source, 'k_revision');
+const cloudBaseFallback = resolveCloudRevisionIdentity({
+  HOSTNAME: 'diet-secretary-rollback-005k-002-6d86bbb6d4-wjhhd',
+});
+assert.strictEqual(cloudBaseFallback.source, 'cloudbase_hostname');
+assert.strictEqual(cloudBaseFallback.value, 'diet-secretary-rollback-005k-002-6d86bbb6d4');
+expectCode({}, 'baseline', 'VERIFY_CONFIRMATION_REQUIRED');
 expectCode({ ...validEnv, RUN_005K_ROLLBACK_VERIFY: '' }, 'baseline', 'VERIFY_CONFIRMATION_REQUIRED');
 expectCode({ ...validEnv, RUN_005K_DEDICATED_SERVICE: '' }, 'baseline', 'DEDICATED_SERVICE_REQUIRED');
 expectCode({ ...validEnv, USER_STORE_ADAPTER: 'tencent-postgres' }, 'rollback', 'ROLLBACK_ENVIRONMENT_MISMATCH');
 expectCode({ ...validEnv, LANGGRAPH_CHECKPOINTER_BACKEND: 'postgres' }, 'rollback', 'ROLLBACK_ENVIRONMENT_MISMATCH');
 expectCode({ ...validEnv, TENCENT_PG_CUTOVER_MODE: 'full' }, 'rollback', 'ROLLBACK_ENVIRONMENT_FORBIDDEN_VALUE');
 expectCode(validEnv, 'cleanup', 'ROLLBACK_PHASE_UNSUPPORTED');
+assert.throws(
+  () => resolveCloudRevisionIdentity({ HOSTNAME: 'invalid' }),
+  (error) => error?.code === 'CLOUD_REVISION_ID_REQUIRED'
+);
 
 const source = fs.readFileSync(path.join(__dirname, 'manual-test-sqlite-rollback-cloud.js'), 'utf8');
 assert(source.includes('http://127.0.0.1:'));

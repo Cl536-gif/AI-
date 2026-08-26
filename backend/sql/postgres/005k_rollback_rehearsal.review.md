@@ -6,7 +6,7 @@
 
 ## 稳定制品
 
-- 固定标签：`sqlite-rollback-005k-v2`；标签必须指向包含005k校验器及SQLite readiness修复的已推送提交。`v1`因错误地让SQLite readiness依赖PostgreSQL而停用。
+- 固定标签：`sqlite-rollback-005k-v3`；标签必须指向包含005k校验器、SQLite readiness修复及CloudBase修订标识回退的已推送提交。`v1`因SQLite readiness错误依赖PostgreSQL而停用，`v2`因CloudBase不注入`K_REVISION`而停用。
 - 构建上下文：`backend`；Dockerfile、`package.json`和`package-lock.json`必须与制品中的SHA-256一致。
 - 稳定运行配置：`USER_STORE_ADAPTER=sqlite`、`LANGGRAPH_CHECKPOINTER_BACKEND=memory`、`NODE_ENV=production`、`PORT=3001`。
 - PostgreSQL切换模式、切换确认及PostgreSQL checkpointer确认/模式在回滚修订中必须为空。
