@@ -57,8 +57,8 @@ assert.throws(
   }),
   (error) => error?.code === 'LANGGRAPH_SHARED_CHECKPOINTER_REQUIRED'
 );
-assert(!gateSource.includes('TENCENT_PG_FULL_MAX_INSTANCES'));
-assert(!gateSource.includes('TENCENT_PG_FULL_CONNECTION_BUDGET'));
+assert(gateSource.includes('assertFullPostgresCapacityAllowed'));
+assert(gateSource.includes('parsePostgresRollbackPolicy'));
 
 const expectedBlockers = [
   'B1｜LangGraph 会话状态仍是进程内存',
@@ -82,5 +82,6 @@ console.log(JSON.stringify({
   fullCutoverReady: false,
   blockerCount: expectedBlockers.length,
   processLocalCheckpointerDetected: true,
-  fullCapacityGateMissing: true,
+  fullCapacityGateCandidatePresent: true,
+  fullCapacityCloudEvidenceMissing: true,
 }));

@@ -1,6 +1,12 @@
 const {
   isTencentPostgresCutoverReady,
 } = require('./tencentPostgresUserStoreCapabilities');
+const {
+  assertFullPostgresCapacityAllowed,
+} = require('../db/postgresCapacityGate');
+const {
+  parsePostgresRollbackPolicy,
+} = require('../db/postgresRollbackSignals');
 
 const SINGLE_INSTANCE_CANARY_MODE = 'single_instance_canary';
 const DUAL_INSTANCE_HTTP_CANARY_MODE = 'dual_instance_http_canary';
@@ -103,7 +109,9 @@ function assertTencentPostgresCutoverAllowed({
         'Tencent PostgreSQL尚未满足全量切换门槛'
       );
     }
-    return Object.freeze({ mode, allowed: true });
+    const capacity = assertFullPostgresCapacityAllowed({ env });
+    const rollbackPolicy = parsePostgresRollbackPolicy(env);
+    return Object.freeze({ mode, capacity, rollbackPolicy, allowed: true });
   }
 
   throw createCutoverError(
