@@ -84,6 +84,8 @@ assert(preflight.includes('SET TRANSACTION READ ONLY'));
 assert(preflight.includes("THEN 'PASS'"));
 assert(preflight.includes("ELSE 'BLOCKED'"));
 assert(preflight.includes("current_setting('ssl') = 'on'"));
+assert(preflight.includes("c.relkind IN ('r', 'p')"));
+assert(!preflight.includes('information_schema.tables'));
 assert(!/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|CREATE|ALTER|DROP|GRANT|REVOKE)\b/i.test(
   preflight.replace(/^--.*$/gm, '')
 ));
@@ -93,6 +95,13 @@ assert(seed.includes('GRANT SELECT'));
 assert(cutoff.includes('recommended_recovery_target_at'));
 assert(cleanup.includes('DROP TABLE app.backup_recovery_canary_005l'));
 assert(!cleanup.includes('CASCADE'));
+
+const cloudVerifier = fs.readFileSync(
+  path.join(__dirname, 'manual-test-postgres-backup-restore-cloud.js'),
+  'utf8'
+);
+assert(cloudVerifier.includes("c.relkind IN ('r', 'p')"));
+assert(!cloudVerifier.includes('information_schema.tables'));
 
 console.log(JSON.stringify({
   batch: '005l-postgres-backup-restore-cloud',

@@ -79,9 +79,12 @@ async function run(env = process.env) {
 
     const inventoryResult = await client.query(`
       SELECT
-        (SELECT count(*)::int FROM information_schema.tables
-         WHERE table_schema = 'app' AND table_type = 'BASE TABLE'
-           AND table_name <> 'backup_recovery_canary_005l') AS table_count,
+        (SELECT count(*)::int
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'app'
+           AND c.relkind IN ('r', 'p')
+           AND c.relname <> 'backup_recovery_canary_005l') AS table_count,
         (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'app') AS function_count,
         (SELECT count(*)::int FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace

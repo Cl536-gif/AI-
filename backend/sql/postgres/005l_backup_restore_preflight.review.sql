@@ -16,8 +16,10 @@ SELECT
   current_setting('ssl') = 'on' AS server_ssl_capable,
   to_regclass('app.backup_recovery_canary_005l') IS NULL AS canary_absent,
   (SELECT count(*)::int
-   FROM information_schema.tables
-   WHERE table_schema = 'app' AND table_type = 'BASE TABLE') AS source_table_count,
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'app'
+     AND c.relkind IN ('r', 'p')) AS source_table_count,
   (SELECT count(*)::int
    FROM pg_proc p
    JOIN pg_namespace n ON n.oid = p.pronamespace
