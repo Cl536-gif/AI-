@@ -107,7 +107,7 @@ function decodeCertificateBase64(encoded) {
   return certificate;
 }
 
-function parseSsl(env) {
+function parseSsl(env, host) {
   const sslMode = readTrimmed(env, 'TENCENT_PG_SSL_MODE').toLowerCase() || DEFAULTS.sslMode;
   const caBase64 = readTrimmed(env, 'TENCENT_PG_SSL_CA_BASE64');
   if (!['disable', 'require', 'verify-full'].includes(sslMode)) {
@@ -126,6 +126,10 @@ function parseSsl(env) {
   return {
     sslMode,
     ssl: Object.freeze({
+      // node-postgres upgrades an already-connected socket. Supplying the
+      // protected TencentDB VIP again lets Node verify the certificate SAN
+      // against that address, matching TencentDB's documented Node.js setup.
+      host,
       rejectUnauthorized: true,
       ca: decodeCertificateBase64(caBase64),
     }),
@@ -133,6 +137,7 @@ function parseSsl(env) {
 }
 
 function parsePostgresPoolConfig(env = process.env) {
+  const host = parseHost(env);
   const database = readRequired(env, 'TENCENT_PG_DATABASE');
   if (database !== EXPECTED_DATABASE) {
     throw new Error(`TENCENT_PG_DATABASE 必须固定为 ${EXPECTED_DATABASE}`);
@@ -143,9 +148,9 @@ function parsePostgresPoolConfig(env = process.env) {
     throw new Error(`TENCENT_PG_USER 必须固定为最小权限账号 ${EXPECTED_USER}`);
   }
 
-  const sslConfig = parseSsl(env);
+  const sslConfig = parseSsl(env, host);
   return Object.freeze({
-    host: parseHost(env),
+    host,
     port: parseBoundedInteger(env, 'TENCENT_PG_PORT'),
     database,
     user,

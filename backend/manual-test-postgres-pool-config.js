@@ -78,6 +78,7 @@ function main() {
     TENCENT_PG_SSL_MODE: 'verify-full',
     TENCENT_PG_SSL_CA_BASE64: Buffer.from(fakePem).toString('base64'),
   });
+  assert.strictEqual(verifiedConfig.ssl.host, validEnv.TENCENT_PG_HOST);
   assert.strictEqual(verifiedConfig.ssl.rejectUnauthorized, true);
   assert.strictEqual(verifiedConfig.ssl.ca, fakePem);
 
