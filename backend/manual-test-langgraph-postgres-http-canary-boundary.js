@@ -13,8 +13,11 @@ const {
   resolveLangGraphCheckpointerPolicy,
 } = require('./src/langgraph/checkpointerProvider');
 const {
+  FAULT_CONFIRMATION,
   assertHttpCanaryRequest,
   invokeGraphWithCheckpointerPolicy,
+  resolveHttpCanaryFaultControls,
+  resolveHttpCanaryInstanceFingerprint,
 } = require('./src/langgraph/httpCanaryBoundary');
 
 const token = 'test-only-http-canary-token-32-characters';
@@ -32,6 +35,9 @@ const env = {
   LANGGRAPH_CHECKPOINTER_MAX_INSTANCES: '2',
   LANGGRAPH_THREAD_LOCK_CONFIRM: POSTGRES_THREAD_LOCK_CONFIRMATION,
   LANGGRAPH_HTTP_CANARY_TOKEN: token,
+  LANGGRAPH_THREAD_HMAC_SECRET: 'test-only-http-canary-hmac-secret-32-characters',
+  HOSTNAME: '005h-local-instance-a',
+  RUN_005H_FAULT_INJECTION: FAULT_CONFIRMATION,
 };
 
 const cutover = assertTencentPostgresCutoverAllowed({ env });
@@ -59,6 +65,21 @@ expectCode(
   'HTTP_CANARY_UNAUTHORIZED'
 );
 assert.strictEqual(assertHttpCanaryRequest({ policy, token, env }).authorized, true);
+assert.strictEqual(resolveHttpCanaryInstanceFingerprint({ policy, env }).length, 64);
+assert.deepStrictEqual(
+  resolveHttpCanaryFaultControls({ policy, holdMs: '500', fault: 'after-identity', env }),
+  { holdMs: 500, failAfterIdentity: true }
+);
+expectCode(
+  () => resolveHttpCanaryFaultControls({
+    policy, holdMs: '500', env: { ...env, RUN_005H_FAULT_INJECTION: '' },
+  }),
+  'HTTP_CANARY_FAULT_INJECTION_NOT_CONFIRMED'
+);
+expectCode(
+  () => resolveHttpCanaryFaultControls({ policy, holdMs: '15001', env }),
+  'HTTP_CANARY_HOLD_INVALID'
+);
 assert.strictEqual(
   assertHttpCanaryRequest({ policy: { httpCanary: false }, token: '', env: {} }).required,
   false
@@ -80,11 +101,17 @@ async function run() {
     pool: {},
     withLock: async ({ scope, work }) => {
       calls.push(['lock', scope]);
-      return work();
+      return work({ waitMs: 625 });
     },
+    holdMs: 500,
+    sleep: async (ms) => calls.push(['sleep', ms]),
+    onLockAcquired: ({ waitMs }) => calls.push(['wait', waitMs]),
   });
   assert.deepStrictEqual(result, { status: 'ok' });
-  assert.deepStrictEqual(calls.map((entry) => entry[0]), ['lock', 'invoke']);
+  assert.deepStrictEqual(
+    calls.map((entry) => entry[0]),
+    ['lock', 'wait', 'sleep', 'invoke']
+  );
   const routeSource = fs.readFileSync(
     path.join(__dirname, 'src/routes/chatLanggraph.js'),
     'utf8'
@@ -100,6 +127,9 @@ async function run() {
     sharedUserStoreRequired: true,
     bearerTokenRequiredBeforeIdentity: true,
     sameThreadLockWrapsGraphInvoke: true,
+    instanceFingerprintIsHmacOnly: true,
+    controlledFaultInjectionGated: true,
+    lockWaitObservableInCanaryOnly: true,
     sqlitePathUnchanged: true,
     productionReady: false,
   }));

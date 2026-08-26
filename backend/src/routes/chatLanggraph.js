@@ -16,9 +16,13 @@ const { workflow } = require('../langgraph/graph');
 const { createLangGraphCheckpointer } = require('../langgraph/checkpointerProvider');
 const { resolveInternalThreadId } = require('../langgraph/threadScope');
 const {
+  FAULT_HEADER,
+  HOLD_HEADER,
   TOKEN_HEADER,
   assertHttpCanaryRequest,
   invokeGraphWithCheckpointerPolicy,
+  resolveHttpCanaryFaultControls,
+  resolveHttpCanaryInstanceFingerprint,
 } = require('../langgraph/httpCanaryBoundary');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
@@ -132,10 +136,20 @@ router.post('/', async (req, res, next) => {
     }
   }
 
+  let httpCanaryControls;
+  let httpCanaryInstanceFingerprint;
   try {
     assertHttpCanaryRequest({
       policy: checkpointerPolicy,
       token: req.get(TOKEN_HEADER),
+    });
+    httpCanaryControls = resolveHttpCanaryFaultControls({
+      policy: checkpointerPolicy,
+      holdMs: req.get(HOLD_HEADER),
+      fault: req.get(FAULT_HEADER),
+    });
+    httpCanaryInstanceFingerprint = resolveHttpCanaryInstanceFingerprint({
+      policy: checkpointerPolicy,
     });
   } catch (error) {
     if (Number.isInteger(error?.statusCode)) {
@@ -192,6 +206,12 @@ router.post('/', async (req, res, next) => {
     // userId。当前 deviceId 只映射为内部 anon:* 身份；档案与事件写入必须
     // 经过 graphPersistenceCoordinator 的权限边界。
     const anonymousUserId = deviceId ? await resolveAnonymousUser(deviceId) : null;
+    if (httpCanaryControls.failAfterIdentity) {
+      return res.status(503).json({
+        error: '005h受控故障已在身份解析后触发',
+        code: 'HTTP_CANARY_FAULT_AFTER_IDENTITY',
+      });
+    }
     const internalThreadId = resolveInternalThreadId({
       publicThreadId: resolvedThreadId,
       userId: anonymousUserId,
@@ -216,6 +236,7 @@ router.post('/', async (req, res, next) => {
     }
     inputMessages.push({ role: 'human', content: graphMessage });
     const isHomepageHandoff = !threadId && introAlreadyShown;
+    let httpCanaryLockWaitMs = null;
     const result = await invokeGraphWithCheckpointerPolicy({
       graph: graphWithCheckpointer,
       input: {
@@ -228,6 +249,8 @@ router.post('/', async (req, res, next) => {
       },
       config,
       policy: checkpointerPolicy,
+      holdMs: httpCanaryControls.holdMs,
+      onLockAcquired: ({ waitMs }) => { httpCanaryLockWaitMs = waitMs; },
     });
     const persistence = anonymousUserId
       ? await persistGraphTurn(
@@ -301,6 +324,10 @@ router.post('/', async (req, res, next) => {
       cycleOnboardingStatus: result.cycleOnboardingStatus,
       menstrualProfile: result.menstrualProfile,
       retrieved: result.retrieved || [],
+      ...(checkpointerPolicy.httpCanary ? {
+        canaryInstanceFingerprint: httpCanaryInstanceFingerprint,
+        canaryLockWaitMs: httpCanaryLockWaitMs,
+      } : {}),
     });
   } catch (err) {
     next(err);
