@@ -1,0 +1,124 @@
+005h formal LangGraph HTTP dual-instance PostgreSQL canary acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+6617770 Gate dual-instance LangGraph HTTP canary
+27b2375 Add dual-instance HTTP canary verification
+branch_remote_sync_before_archive=PASS
+
+[Local verification]
+http_canary_boundary_status=PASS
+dedicated_service_required=true
+two_instances_and_pool_two_required=true
+shared_user_store_required=true
+token_required_before_identity=true
+same_thread_lock_wraps_graph_invoke=true
+instance_fingerprint_hmac_only=true
+controlled_fault_injection_gated=true
+lock_wait_observable_in_canary_only=true
+sqlite_path_unchanged=true
+production_ready=false
+cloud_guard_status=PASS
+fixed_identity_only=true
+local_http_only=true
+distinct_instance_fingerprints_required=true
+linear_checkpoint_chain_required=true
+exact_cleanup_required=true
+guard_network_used=false
+005g_concurrency_guard_regression=PASS
+005f_dual_instance_guard_regression=PASS
+005e_shared_checkpointer_guard_regression=PASS
+005a_full_cutover_gate_remains_closed=PASS
+004p_async_http_regression=PASS
+
+[Discarded diagnostic rounds]
+missing_model_environment=EXPECTED_HTTP_FAILURE
+model_account_not_in_good_standing=EXPECTED_HTTP_500
+model_account_restored=true
+post_restore_diagnostic_http_status=200
+diagnostic_round_accepted_as_final=false
+missing_final_checkpoint_rejected=true
+preflight_existing_identity_rejected=true
+protected_identity_table_direct_read_rejected=true
+discarded_rounds_precisely_cleaned=true
+discarded_rounds_identity_user_advice_residue=0
+discarded_rounds_checkpoint_blob_write_residue=0
+
+[Final clean preflight]
+preflight_status=PASS
+cleanup_tables_present=true
+fixed_test_identity_absent=true
+matching_identity_count=0
+global_checkpoint_count=0
+global_blob_count=0
+global_write_count=0
+
+[Final controlled HTTP canary]
+boundary_status=PASS
+missing_token_rejected=true
+wrong_token_rejected=true
+after_identity_fault_injected=true
+writer_status=PASS
+writer_http_status=200
+writer_previous_checkpoint_loaded=false
+writer_identity_resolved=true
+writer_advice_persistence=recorded
+reader_status=PASS
+reader_http_status=200
+reader_previous_checkpoint_loaded=true
+reader_identity_resolved=true
+contender_a_status=PASS
+contender_a_http_status=200
+contender_a_previous_checkpoint_loaded=true
+contender_a_lock_wait_ms=1
+contender_b_status=PASS
+contender_b_http_status=200
+contender_b_previous_checkpoint_loaded=true
+contender_b_lock_wait_ms=11930
+contender_b_peer_overlap_proven=true
+marker_replay_status=PASS
+marker_applied_once=true
+matching_marker_rows=1
+verify_status=PASS
+distinct_instances=true
+instance_count=2
+advice_persisted=true
+checkpoint_count=33
+branch_count=0
+raw_identifiers_stored=false
+
+[Final cleanup]
+checkpoint_cleanup_status=PASS
+remaining_checkpoint_rows=0
+dms_cleanup_status=PASS
+http_advice_was_persisted=true
+two_instance_markers_were_persisted=true
+advice_rows_before_cleanup=5
+remaining_identities=0
+remaining_users=0
+remaining_advice=0
+global_checkpoint_count_after_cleanup=0
+global_blob_count_after_cleanup=0
+global_write_count_after_cleanup=0
+
+[Operational cleanup]
+temporary_validation_service_deleted=true
+temporary_instances_running=0
+production_service_modified=false
+
+[Release boundary]
+formal_http_shared_checkpointer_verified=true
+formal_http_same_thread_lock_verified=true
+cross_pod_checkpoint_recovery_verified=true
+two_pod_overlap_verified=true
+idempotent_user_store_marker_verified=true
+linear_checkpoint_chain_verified=true
+production_ready=false
+full_postgres_cutover_completed=false
+post_checkpoint_side_effect_atomicity_verified=false
+process_kill_recovery_verified=false
+network_partition_verified=false
+rolling_upgrade_verified=false
+key_rotation_verified=false
+model_account_monitoring_complete=false
+acceptance_contains_sensitive_identifiers=false

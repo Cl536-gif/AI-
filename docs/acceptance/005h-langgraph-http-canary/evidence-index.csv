@@ -1,0 +1,14 @@
+evidence_id,stage,environment,result,source
+005h-01,HTTP canary boundary and lock policy,Local Node.js,PASS,raw-results.txt
+005h-02,cloud verifier fail-closed guard,Local Node.js,PASS NO NETWORK,raw-results.txt
+005h-03,shared and dual-instance regressions,Local Node.js,PASS,raw-results.txt
+005h-04,clean preflight,DMS PostgreSQL,PASS IDENTITY ABSENT AND CHECKPOINTER ZERO,raw-results.txt
+005h-05,token rejection and controlled fault,CloudBase temporary service,PASS,raw-results.txt
+005h-06,formal HTTP writer,CloudBase Pod A,PASS HTTP 200 ADVICE RECORDED,raw-results.txt
+005h-07,cross-pod HTTP reader,CloudBase Pod B,PASS PREVIOUS CHECKPOINT LOADED,raw-results.txt
+005h-08,two-pod overlapping contenders,CloudBase Pods A and B,PASS PEER WAIT 11930MS,raw-results.txt
+005h-09,idempotent UserStore marker replay,CloudBase temporary service,PASS APPLIED ONCE,raw-results.txt
+005h-10,complete checkpoint chain verification,CloudBase temporary service,PASS 33 CHECKPOINTS ZERO BRANCHES,raw-results.txt
+005h-11,precise checkpoint and user data cleanup,CloudBase and DMS,PASS ZERO RESIDUE,raw-results.txt
+005h-12,temporary service shutdown,CloudBase temporary service,PASS SERVICE DELETED,raw-results.txt
+005h-13,external model account failure diagnosis,CloudBase temporary service,EXPECTED FAILURE DISCARDED AND CLEANED,raw-results.txt
