@@ -1,0 +1,11 @@
+evidence_id,stage,environment,result,source
+005k-01,fixed SQLite rollback artifact and fail-closed policy,Local Node.js,PASS,raw-results.txt
+005k-02,cloud verifier pre-network guard,Local Node.js,PASS NO NETWORK,raw-results.txt
+005k-03,readiness and PostgreSQL cutover regressions,Local Node.js,PASS,raw-results.txt
+005k-04,stable SQLite baseline revision,CloudBase temporary service,PASS SQLITE MEMORY HEALTHY,raw-results.txt
+005k-05,controlled PostgreSQL HTTP writer,CloudBase temporary service,PASS HTTP 200 RECORDED,raw-results.txt
+005k-06,new stable SQLite rollback revision,CloudBase temporary service,PASS DISTINCT REVISION NO PG NETWORK,raw-results.txt
+005k-07,PostgreSQL write preservation after app rollback,DMS PostgreSQL,PASS READ ONLY,raw-results.txt
+005k-08,checkpointer and fixed user precise cleanup,CloudBase and DMS,PASS ZERO RESIDUE,raw-results.txt
+005k-09,post-cleanup preflight,DMS PostgreSQL,PASS FIXED IDENTITY ZERO,raw-results.txt
+005k-10,temporary validation service removal,CloudBase,PASS DELETED,raw-results.txt

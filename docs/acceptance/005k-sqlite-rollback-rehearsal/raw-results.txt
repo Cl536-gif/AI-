@@ -1,0 +1,102 @@
+005k stable SQLite application rollback rehearsal acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+implementation_commits=7bcdb71,2e9fe41,b339edf,f8740c8
+stable_tag=sqlite-rollback-005k-v3
+tag_digest_verification=PASS
+implementation_remote_sync=PASS
+target_file_count=10
+unrelated_worktree_changes_excluded=true
+
+[Local verification]
+sqlite_rollback_artifact_gate=PASS
+artifact_id=005k-sqlite-rollback-v3
+source_file_count=3
+stable_sqlite_environment_required=true
+postgres_cutover_values_forbidden=true
+data_boundary_fail_closed=true
+sensitive_values_embedded=false
+cloud_guard_status=PASS
+dedicated_service_required=true
+immutable_source_digests_required=true
+cloud_revision_fingerprint_required=true
+guard_postgres_network_used=false
+rollback_rehearsal_contract=PASS
+distinct_cloud_revisions_required=true
+postgres_residue_check_read_only=true
+postgres_writes_must_remain_after_application_rollback=true
+sensitive_rows_emitted=false
+005a_cutover_gate_regression=PASS
+005d_full_cutover_readiness_audit=PASS
+postgres_readiness_lifecycle=PASS
+full_postgres_cutover_ready=false
+
+[Cloud SQLite baseline]
+local_cloud_guard_status=PASS
+baseline_status=PASS
+artifact_id=005k-sqlite-rollback-v3
+source_digests_matched=true
+adapter=sqlite
+checkpointer_backend=memory
+health_passed=true
+revision_identity_source=cloudbase_hostname
+revision_fingerprint_recorded=true
+postgres_network_used=false
+postgres_rows_mutated=false
+
+[Controlled PostgreSQL intermediate revision]
+http_writer_status=PASS
+http_status=200
+previous_checkpoint_loaded=false
+identity_resolved=true
+advice_persistence=recorded
+test_data_retained_for_post_rollback_proof=true
+
+[Cloud SQLite rollback]
+local_cloud_guard_status=PASS
+rollback_status=PASS
+artifact_id=005k-sqlite-rollback-v3
+source_digests_matched=true
+adapter=sqlite
+checkpointer_backend=memory
+health_passed=true
+revision_identity_source=cloudbase_hostname
+baseline_and_rollback_revisions_distinct=true
+postgres_network_used=false
+postgres_rows_mutated=false
+
+[DMS post-rollback read-only proof]
+status=PASS
+fixed_identity_preserved=true
+fixed_user_preserved=true
+http_advice_rows_preserved=1
+application_rollback_deleted_postgres_writes=false
+query_read_only=true
+
+[Precise cleanup]
+checkpointer_cleanup_status=PASS
+remaining_checkpoint_rows=0
+dms_user_cleanup_status=PASS
+http_advice_rows_before_cleanup=2
+two_instance_markers_present=false
+writer_only_scope_expected_no_markers=true
+remaining_identities=0
+remaining_users=0
+remaining_advice_rows=0
+post_cleanup_preflight_status=PASS
+post_cleanup_fixed_identity_count=0
+
+[Operational cleanup]
+temporary_service_deleted=true
+production_service_modified=false
+
+[Release boundary]
+stable_sqlite_rollback_artifact_verified=true
+cloud_application_rollback_verified=true
+application_and_data_rollback_separated=true
+postgres_test_residue_zero=true
+full_postgres_cutover_completed=false
+production_data_migration_completed=false
+database_disaster_recovery_verified=false
+acceptance_contains_sensitive_identifiers=false
