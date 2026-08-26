@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   CONFIRMATION,
   DEDICATED_SERVICE_CONFIRMATION,
+  assertReaderPrecondition,
   assert005fCloudEnvironment,
   resolveInstanceFingerprint,
 } = require('./manual-test-langgraph-postgres-dual-instance-cloud');
@@ -55,6 +56,24 @@ expectCode({ ...validEnv, HOSTNAME: '' }, 'writer', 'INSTANCE_HOSTNAME_REQUIRED'
 expectCode({ ...validEnv, TENCENT_PG_HOST: '203.0.113.8' }, 'writer', 'PRIVATE_IPV4_REQUIRED');
 expectCode(validEnv, 'unknown', 'VERIFY_PHASE_INVALID');
 
+const persistedWriterState = {
+  checkpoint: {
+    channel_values: {
+      count: 2,
+      instanceFingerprints: ['writer-instance-fingerprint'],
+    },
+  },
+};
+assert.deepStrictEqual(
+  assertReaderPrecondition(persistedWriterState, 'reader-instance-fingerprint'),
+  persistedWriterState.checkpoint.channel_values
+);
+assert.throws(
+  () => assertReaderPrecondition(persistedWriterState, 'writer-instance-fingerprint'),
+  (error) => error?.code === 'CP_INSTANCE_NOT_DISTINCT'
+);
+assert.strictEqual(persistedWriterState.checkpoint.channel_values.count, 2);
+
 console.log(JSON.stringify({
   batch: '005f-dual-instance-checkpointer-cloud',
   check: 'local_cloud_guard',
@@ -64,6 +83,7 @@ console.log(JSON.stringify({
   runtimeCheckpointerRemainsMemory: true,
   declaredInstancesRequired: 2,
   distinctInstanceFingerprintVerified: true,
+  sameInstanceRejectedBeforeWrite: true,
   privateNetworkRequired: true,
   networkUsed: false,
 }));

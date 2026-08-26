@@ -148,6 +148,21 @@ function resolveVerificationThread({ runId, env }) {
   });
 }
 
+function assertReaderPrecondition(existing, instanceFingerprint) {
+  const values = existing?.checkpoint?.channel_values;
+  assertCondition(values && values.count === 2, 'CP_READER_BASE_STATE_MISMATCH');
+  assertCondition(
+    Array.isArray(values.instanceFingerprints)
+      && values.instanceFingerprints.length === 1,
+    'CP_WRITER_INSTANCE_MARKER_MISMATCH'
+  );
+  assertCondition(
+    values.instanceFingerprints[0] !== instanceFingerprint,
+    'CP_INSTANCE_NOT_DISTINCT'
+  );
+  return values;
+}
+
 async function runPhase({ phase, runId, instanceFingerprint, pool, checkpointer, env }) {
   const { publicThreadId, internalThreadId } = resolveVerificationThread({ runId, env });
   const config = { configurable: { thread_id: internalThreadId } };
@@ -190,6 +205,8 @@ async function runPhase({ phase, runId, instanceFingerprint, pool, checkpointer,
   }
 
   assertCondition(Boolean(existing), 'CP_READER_STATE_MISSING');
+  // 必须在invoke之前证明reader来自不同实例；否则失败本身也会写入新checkpoint。
+  assertReaderPrecondition(existing, instanceFingerprint);
   const result = await graph.invoke({
     count: 1,
     instanceFingerprints: [instanceFingerprint],
@@ -248,6 +265,7 @@ if (require.main === module) {
 module.exports = {
   CONFIRMATION,
   DEDICATED_SERVICE_CONFIRMATION,
+  assertReaderPrecondition,
   assert005fCloudEnvironment,
   createGraph,
   resolveInstanceFingerprint,

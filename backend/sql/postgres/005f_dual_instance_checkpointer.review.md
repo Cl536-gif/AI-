@@ -8,7 +8,7 @@
 2. 验证服务保持`USER_STORE_ADAPTER=sqlite`，运行时`LANGGRAPH_CHECKPOINTER_BACKEND=memory`；只有专用脚本直接构造PostgreSQL saver。
 3. 验证服务必须明确声明2个实例、固定最小和最大实例数均为2，并使用独立确认词。缺一项时脚本在联网前失败关闭。
 4. 两个实例必须共享同一套数据库连接配置、schema版本和HMAC thread作用域密钥；密钥不得进入命令、截图、日志或验收归档。
-5. 每轮使用新的非敏感run ID。writer发现旧状态时拒绝覆盖；reader找不到状态或实例指纹相同时拒绝通过。
+5. 每轮使用新的非敏感run ID。writer发现旧状态时拒绝覆盖；reader在任何`invoke`写入之前读取writer checkpoint并核对count与实例指纹，找不到状态、状态不干净或实例相同时均拒绝写入和通过。
 6. 实例指纹由HMAC密钥和Pod hostname生成；输出只报告“两实例不同”的布尔结论，不输出hostname或指纹。
 7. cleanup无论reader成功或失败都必须运行，并证明checkpoints、blobs、writes总残留为0。
 
