@@ -1,0 +1,77 @@
+005i PostgreSQL capacity budget and rollback signal acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+implementation_commit=23f87a9
+implementation_remote_sync=PASS
+target_file_count=11
+unrelated_worktree_changes_excluded=true
+
+[Local verification]
+capacity_rollback_gate_status=PASS
+application_connection_limit_test=20
+topology_mismatch_rejected=true
+oversubscription_rejected=true
+insufficient_samples_hold=true
+hard_pool_signals_rollback=true
+rate_signals_rollback=true
+full_cutover_opened=false
+cloud_guard_status=PASS
+dedicated_service_required=true
+production_user_store_remains_sqlite=true
+observed_topology_required=true
+capacity_budget_required=true
+rollback_thresholds_required=true
+private_network_required=true
+dms_preflight_read_only=true
+guard_network_used=false
+005a_cutover_gate_regression=PASS
+005d_full_readiness_audit=PASS
+005h_http_boundary_regression=PASS
+005h_cloud_guard_regression=PASS
+postgres_pool_configuration_regression=PASS
+postgres_readiness_lifecycle_regression=PASS
+004p_async_http_regression=PASS
+
+[DMS read-only capacity preflight]
+database_max_connections=2048
+database_superuser_reserved_connections=10
+current_database_connections=4
+current_application_connections=0
+active_application_connections=0
+waiting_application_connections=0
+
+[Declared and observed topology]
+maximum_instances=2
+observed_maximum_instances=2
+pool_max_per_instance=1
+observed_pool_max_per_instance=1
+application_connection_limit=2
+application_connection_budget=16
+operational_reserve_connections=128
+database_application_limit=1920
+application_headroom=14
+database_headroom=1918
+
+[Cloud verification]
+local_cloud_guard_status=PASS
+cloud_capacity_rollback_status=PASS
+topology_matched=true
+readiness_passed=true
+actual_pool_waiting=0
+healthy_signal=continue
+synthetic_rollback_signal=rollback
+production_user_store_remains_sqlite=true
+full_cutover_opened=false
+
+[Release boundary]
+capacity_budget_verified=true
+observed_topology_verified=true
+rollback_signal_verified=true
+automatic_cloudbase_rollback_action_verified=false
+production_observation_window_complete=false
+sqlite_data_migration_complete=false
+stable_rollback_artifact_verified=false
+backup_restore_verified=false
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false

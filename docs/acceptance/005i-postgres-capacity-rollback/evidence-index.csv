@@ -1,0 +1,9 @@
+evidence_id,stage,environment,result,source
+005i-01,capacity and rollback fail-closed gate,Local Node.js,PASS,raw-results.txt
+005i-02,cloud verifier pre-network guard,Local Node.js,PASS NO NETWORK,raw-results.txt
+005i-03,critical PostgreSQL and HTTP regressions,Local Node.js,PASS,raw-results.txt
+005i-04,database capacity and aggregate connection preflight,DMS PostgreSQL,PASS READ ONLY,raw-results.txt
+005i-05,declared and observed deployment topology,CloudBase temporary service,PASS TWO INSTANCES POOL ONE,raw-results.txt
+005i-06,private database readiness and healthy pool signal,CloudBase temporary service,PASS CONTINUE,raw-results.txt
+005i-07,synthetic threshold rollback signal,CloudBase temporary service,PASS ROLLBACK,raw-results.txt
+005i-08,production and full-cutover boundary,CloudBase temporary service,PASS SQLITE AND FULL CLOSED,raw-results.txt
