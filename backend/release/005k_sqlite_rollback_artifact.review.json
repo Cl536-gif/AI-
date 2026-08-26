@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "005k-sqlite-rollback-v1",
+  "source": {
+    "gitTag": "sqlite-rollback-005k-v1",
+    "buildContext": "backend",
+    "files": [
+      {
+        "sourcePath": "backend/Dockerfile",
+        "runtimePath": "Dockerfile",
+        "sha256": "22d473ba8d5dcd3fd3b08f375e92a4d49143af5bfd4aa8afb687152e93078c6b"
+      },
+      {
+        "sourcePath": "backend/package.json",
+        "runtimePath": "package.json",
+        "sha256": "3f9ab151037cfc65c6af3ce6deadc510e96308670457712883df5c31d1a0f663"
+      },
+      {
+        "sourcePath": "backend/package-lock.json",
+        "runtimePath": "package-lock.json",
+        "sha256": "c9fc85ab8055a0621f20269d33afc594274c75308059becbabc8c385411727e2"
+      }
+    ]
+  },
+  "environment": {
+    "required": {
+      "USER_STORE_ADAPTER": "sqlite",
+      "LANGGRAPH_CHECKPOINTER_BACKEND": "memory",
+      "NODE_ENV": "production",
+      "PORT": "3001"
+    },
+    "mustBeEmpty": [
+      "TENCENT_PG_CUTOVER_MODE",
+      "TENCENT_PG_CUTOVER_CONFIRM",
+      "LANGGRAPH_CHECKPOINTER_CONFIRM",
+      "LANGGRAPH_CHECKPOINTER_MODE"
+    ]
+  },
+  "health": [
+    { "path": "/api/health", "expectedStatus": 200 },
+    { "path": "/api/ready", "expectedStatus": 200 }
+  ],
+  "dataBoundary": {
+    "postgresWritesRemainAuthoritative": true,
+    "automaticPostgresToSqliteCopy": false,
+    "automaticPostgresDelete": false,
+    "sqliteFileMutationAuthorized": false,
+    "realTrafficRollbackRequiresWriteFreeze": true
+  }
+}
