@@ -1,0 +1,10 @@
+evidence_id,stage,environment,result,source
+005g-01,guard and advisory lock lifecycle,Local Node.js,PASS,raw-results.txt
+005g-02,idempotent replay and branch rejection simulation,Local MemorySaver,PASS,raw-results.txt
+005g-03,fail-closed operational diagnostics,CloudBase temporary service,PASS EXPECTED FAILURES WITHOUT INVALID WRITES,raw-results.txt
+005g-04,seed shared state,CloudBase temporary service,PASS COUNT 2 PERSISTED,raw-results.txt
+005g-05,two-pod overlapping contenders,CloudBase temporary service,PASS COUNT 4 TO 6 PEER WAIT PROVEN,raw-results.txt
+005g-06,idempotent operation replay,CloudBase temporary service,PASS CHECKPOINT UNCHANGED,raw-results.txt
+005g-07,complete checkpoint chain verification,CloudBase temporary service,PASS NINE CHECKPOINTS ZERO BRANCHES,raw-results.txt
+005g-08,precise checkpoint cleanup,CloudBase temporary service,PASS ZERO RESIDUE,raw-results.txt
+005g-09,temporary deployment shutdown,CloudBase temporary service,PASS DEPLOYMENT DELETED,raw-results.txt

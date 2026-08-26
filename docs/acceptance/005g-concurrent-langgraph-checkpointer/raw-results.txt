@@ -1,0 +1,78 @@
+005g concurrent LangGraph PostgreSQL checkpointer acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+13a24b2 Add concurrent checkpointer verification
+branch_remote_sync=PASS
+
+[Local verification]
+local_cloud_guard=PASS
+dedicated_service_required=true
+user_store_remains_sqlite=true
+runtime_checkpointer_remains_memory=true
+declared_instances_required=2
+per_instance_pool_budget=2
+deterministic_lock_keys=true
+lock_success_path=PASS
+lock_polling_path=PASS
+lock_timeout_path=PASS
+lock_release_failure_path=PASS
+idempotent_replay_simulation=PASS
+linear_chain_simulation=PASS
+branch_detection=PASS
+005f_regression=PASS
+checkpointer_provider_regression=PASS
+005d_full_cutover_gate_remains_closed=PASS
+004p_async_http_regression=PASS
+
+[Fail-closed cloud diagnostics]
+missing_confirmation=EXPECTED_FAILURE_NO_NETWORK
+missing_dual_instance_declaration=EXPECTED_FAILURE_NO_NETWORK
+contender_before_required_base=EXPECTED_FAILURE_NO_WRITE
+sequential_execution_as_overlap=EXPECTED_FAILURE_NO_WRITE
+same_pod_processes_as_distinct_instances=EXPECTED_FAILURE
+discarded_rounds_cleanup=PASS
+
+[Corrected dual-pod concurrent verification]
+seed_status=PASS
+seed_count=2
+seed_persisted=true
+raw_identifiers_stored=false
+contender_a_status=PASS
+contender_a_count=4
+contender_a_operation_applied_once=true
+contender_b_status=PASS
+contender_b_count=6
+contender_b_waited_for_peer=true
+contender_b_operation_applied_once=true
+replay_status=PASS
+replay_count=6
+replayed=true
+checkpoint_unchanged=true
+verify_status=PASS
+final_count=6
+operations_applied=2
+distinct_instances=true
+checkpoint_count=9
+branch_count=0
+raw_identifiers_stored=false
+cleanup_status=PASS
+remaining_rows=0
+
+[Operational cleanup]
+temporary_active_deployment_deleted=true
+temporary_instances_running=0
+production_service_modified=false
+
+[Release boundary]
+dual_pod_same_thread_concurrency_verified=true
+idempotent_replay_verified=true
+linear_checkpoint_chain_verified=true
+production_http_lock_integration_verified=false
+process_kill_recovery_verified=false
+network_partition_verified=false
+rolling_upgrade_verified=false
+key_rotation_verified=false
+user_store_adapter=sqlite
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false
