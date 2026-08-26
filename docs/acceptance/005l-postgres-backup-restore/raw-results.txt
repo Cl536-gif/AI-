@@ -1,0 +1,103 @@
+005l PostgreSQL backup restore and transport security acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+implementation_commits=72bcfe2,d0db9ea,a16b2f7,22421cf
+implementation_remote_sync=PASS
+unrelated_worktree_changes_excluded=true
+
+[Local fail-closed verification]
+cloud_guard_status=PASS
+physical_backup_required=true
+log_backup_required=true
+isolated_pitr_required=true
+verify_full_tls_required=true
+source_and_restore_must_differ=true
+rpo_rto_targets_required=true
+dms_preflight_read_only=true
+cleanup_scope_fixed=true
+guard_network_used=false
+
+[Source preflight and backup inventory]
+source_preflight_status=PASS
+expected_database=true
+server_ssl_capable=true
+canary_absent=true
+source_table_count=23
+source_function_count=40
+source_constraint_count=167
+backup_format=physical
+log_backup_enabled=true
+data_retention_days=7
+log_retention_days=7
+latest_successful_backup_within_72_hours=true
+continuous_log_backups_observed=true
+
+[Transport security]
+source_ssl_enabled=true
+restore_ssl_enabled=true
+source_ca_chain_verification=PASS
+restore_ca_chain_verification=PASS
+certificate_currently_valid=true
+ssl_mode=verify-full
+tls_version=TLSv1.3
+certificate_material_archived=false
+
+[Recovery boundary]
+fixed_before_marker_created=true
+fixed_after_marker_created=true
+recovery_target_between_markers=true
+restored_before_marker_present=true
+restored_after_marker_absent=true
+unexpected_marker_rows=0
+marker_hash_matched=true
+
+[Final isolated restore verification]
+status=PASS
+restore_mode=point_in_time_isolated_clone
+restore_instance_distinct=true
+readiness_passed=true
+schema_inventory_matched=true
+restored_table_count=23
+restored_function_count=40
+restored_constraint_count=167
+observed_rpo_minutes=19
+rpo_target_minutes=30
+rpo_target_met=true
+observed_rto_minutes=43
+rto_target_minutes=120
+rto_target_met=true
+source_instance_untouched=true
+restored_data_emitted=false
+
+[Failure transparency]
+short_window_clone_crossed_cutoff=true
+short_window_clone_result=FAIL_CLOSED_AND_DELETED
+midpoint_clone_rpo_minutes=79
+midpoint_clone_result=REJECTED_WITHOUT_LOWERING_TARGET_AND_DELETED
+role_filtered_information_schema_count=16
+canonical_pg_class_count=23
+inventory_counting_fix_commit=22421cf
+corrected_restore_result=PASS
+
+[Precise cleanup]
+source_cleanup_status=PASS
+source_marker_removed=true
+post_cleanup_preflight_status=PASS
+post_cleanup_canary_absent=true
+post_cleanup_table_count=23
+post_cleanup_function_count=40
+post_cleanup_constraint_count=167
+
+[Operational cleanup]
+temporary_validation_service_deleted=true
+isolated_restore_clone_deleted=true
+production_source_instance_deleted=false
+ongoing_temporary_compute_cost=false
+
+[Release boundary]
+backup_recovery_verified=true
+transport_security_verified=true
+full_postgres_cutover_completed=false
+final_go_no_go_completed=false
+acceptance_contains_sensitive_identifiers=false

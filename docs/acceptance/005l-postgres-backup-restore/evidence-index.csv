@@ -1,0 +1,13 @@
+evidence_id,stage,environment,result,source
+005l-01,fail-closed gate and read-only preflight,Local Node.js and DMS,PASS,raw-results.txt
+005l-02,physical backup and WAL retention inventory,TencentDB control plane,PASS,raw-results.txt
+005l-03,source SSL and CA chain verification,TencentDB and local OpenSSL,PASS,raw-results.txt
+005l-04,fixed before and after recovery markers,DMS PostgreSQL,PASS,raw-results.txt
+005l-05,isolated point-in-time clone,TencentDB control plane,PASS,raw-results.txt
+005l-06,restore instance isolation and readiness,CloudBase temporary service,PASS,raw-results.txt
+005l-07,verify-full TLS session,CloudBase to TencentDB,PASS TLSv1.3,raw-results.txt
+005l-08,PITR boundary proof,Restored PostgreSQL,PASS BEFORE ONLY,raw-results.txt
+005l-09,schema inventory comparison,Restored PostgreSQL,PASS 23 40 167,raw-results.txt
+005l-10,RPO and RTO measurement,Cloud rehearsal,PASS 19M 43M,raw-results.txt
+005l-11,source marker precise cleanup and postflight,DMS PostgreSQL,PASS ZERO TEST RESIDUE,raw-results.txt
+005l-12,temporary service and clone removal,CloudBase and TencentDB,PASS DELETED,raw-results.txt
