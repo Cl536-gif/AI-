@@ -81,6 +81,9 @@ const cutoff = fs.readFileSync(path.join(sqlRoot, '005l_backup_restore_cutoff.re
 const cleanup = fs.readFileSync(path.join(sqlRoot, '005l_backup_restore_cleanup.review.sql'), 'utf8');
 
 assert(preflight.includes('SET TRANSACTION READ ONLY'));
+assert(preflight.includes("THEN 'PASS'"));
+assert(preflight.includes("ELSE 'BLOCKED'"));
+assert(preflight.includes("current_setting('ssl') = 'on'"));
 assert(!/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|CREATE|ALTER|DROP|GRANT|REVOKE)\b/i.test(
   preflight.replace(/^--.*$/gm, '')
 ));

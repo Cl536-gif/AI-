@@ -5,7 +5,13 @@ SET LOCAL statement_timeout = '10s';
 SET LOCAL lock_timeout = '3s';
 
 SELECT
-  'PASS' AS status,
+  CASE
+    WHEN current_database() = 'diet_secretary'
+      AND current_setting('ssl') = 'on'
+      AND to_regclass('app.backup_recovery_canary_005l') IS NULL
+    THEN 'PASS'
+    ELSE 'BLOCKED'
+  END AS status,
   current_database() = 'diet_secretary' AS expected_database,
   current_setting('ssl') = 'on' AS server_ssl_capable,
   to_regclass('app.backup_recovery_canary_005l') IS NULL AS canary_absent,

@@ -23,7 +23,7 @@
 
 1. 保持正式 `diet-secretary-api` 为 SQLite；不得修改生产服务。
 2. 在控制台确认最近成功物理备份、数据/日志保留天数、日志备份开启状态；记录观察值，不记录实例ID、地址或凭据。
-3. 在DMS执行只读 preflight，确认标记不存在并记录三项结构计数。
+3. 在DMS执行只读 preflight，确认源实例SSL已开启、标记不存在并记录三项结构计数；任一条件不满足时状态必须为`BLOCKED`。
 4. 执行 seed，记录 `before_marker_at`；至少等待两分钟后执行 cutoff，保存四个UTC时间。
 5. 选择 cutoff 输出的 `recommended_recovery_target_at`，以“按时间点克隆”创建隔离恢复实例；记录恢复开始时间。
 6. 克隆就绪后单独开启 SSL，下载 CA；仅在临时验证服务中以 Base64 密文环境变量配置 CA，连接模式固定 `verify-full`、池上限1。
