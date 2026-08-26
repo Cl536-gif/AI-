@@ -1,0 +1,57 @@
+005f dual-instance LangGraph PostgreSQL checkpointer acceptance
+Date: 2026-08-26 Asia/Shanghai
+
+[Git implementation]
+b7851cd Prepare dual-instance checkpointer verification
+c31db69 Reject same-instance reader before checkpoint write
+branch_remote_sync=PASS
+
+[Local regression]
+dedicated_service_guard=PASS
+user_store_remains_sqlite=true
+runtime_checkpointer_remains_memory=true
+declared_instances_required=2
+private_network_required=true
+same_instance_rejected_before_write=true
+rejected_reader_did_not_mutate_state=true
+distinct_reader_simulation=PASS
+cleanup_simulation=PASS
+005e_provider_regression=PASS
+005d_full_cutover_gate_remains_closed=PASS
+
+[Initial cloud diagnostics]
+build_context_missing=EXPECTED_FAILURE_FIXED
+runtime_postgres_selection=EXPECTED_FAILURE_CLOSED
+private_network_readiness=CONNECTION_TIMEOUT_FIXED
+readiness_after_vpc_fix=PASS
+same_pod_reader=EXPECTED_FAILURE
+same_pod_reader_side_effect_detected=true
+contaminated_round_cleanup=PASS
+
+[Corrected dual-instance cloud verification]
+writer_status=PASS
+writer_count=2
+writer_persisted=true
+raw_identifiers_stored=false
+reader_status=PASS
+reader_count=4
+writer_state_loaded=true
+distinct_instances=true
+instance_count=2
+cleanup_status=PASS
+remaining_rows=0
+
+[Operational cleanup]
+temporary_active_deployment_deleted=true
+temporary_instances_running=0
+production_service_modified=false
+
+[Release boundary]
+dual_instance_sequential_resume_verified=true
+same_thread_concurrency_verified=false
+rolling_upgrade_verified=false
+failover_verified=false
+key_rotation_verified=false
+user_store_adapter=sqlite
+full_postgres_cutover_completed=false
+acceptance_contains_sensitive_identifiers=false

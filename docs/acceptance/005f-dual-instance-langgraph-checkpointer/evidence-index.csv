@@ -1,0 +1,8 @@
+evidence_id,stage,environment,result,source
+005f-01,dedicated service and network guard,Local Node.js,PASS,raw-results.txt
+005f-02,same-instance prewrite rejection regression,Local Node.js,PASS NO MUTATION,raw-results.txt
+005f-03,private network readiness,CloudBase temporary service,PASS AFTER VPC FIX,raw-results.txt
+005f-04,writer on first pod,CloudBase temporary service,PASS COUNT 2 PERSISTED,raw-results.txt
+005f-05,reader on second pod,CloudBase temporary service,PASS COUNT 4 DISTINCT INSTANCES,raw-results.txt
+005f-06,precise checkpoint cleanup,CloudBase temporary service,PASS ZERO RESIDUE,raw-results.txt
+005f-07,temporary deployment shutdown,CloudBase temporary service,PASS DEPLOYMENT DELETED,raw-results.txt
