@@ -7,6 +7,9 @@ const {
 const {
   parsePostgresRollbackPolicy,
 } = require('../db/postgresRollbackSignals');
+const {
+  assertFinalPostgresGoNoGoAllowed,
+} = require('../db/postgresFinalGoNoGoGate');
 
 const SINGLE_INSTANCE_CANARY_MODE = 'single_instance_canary';
 const DUAL_INSTANCE_HTTP_CANARY_MODE = 'dual_instance_http_canary';
@@ -36,6 +39,7 @@ function parseRequiredPositiveInteger(value, name) {
 function assertTencentPostgresCutoverAllowed({
   env = process.env,
   isFullCutoverReady = isTencentPostgresCutoverReady,
+  assertFinalGoNoGoAllowed = assertFinalPostgresGoNoGoAllowed,
 } = {}) {
   const mode = String(env.TENCENT_PG_CUTOVER_MODE || '').trim().toLowerCase();
   const confirmation = String(env.TENCENT_PG_CUTOVER_CONFIRM || '').trim();
@@ -109,9 +113,10 @@ function assertTencentPostgresCutoverAllowed({
         'Tencent PostgreSQL尚未满足全量切换门槛'
       );
     }
+    const finalGoNoGo = assertFinalGoNoGoAllowed({ env });
     const capacity = assertFullPostgresCapacityAllowed({ env });
     const rollbackPolicy = parsePostgresRollbackPolicy(env);
-    return Object.freeze({ mode, capacity, rollbackPolicy, allowed: true });
+    return Object.freeze({ mode, finalGoNoGo, capacity, rollbackPolicy, allowed: true });
   }
 
   throw createCutoverError(

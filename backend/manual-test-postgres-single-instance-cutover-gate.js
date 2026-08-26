@@ -43,6 +43,19 @@ const fullEnv = {
   TENCENT_PG_ROLLBACK_IDENTITY_FAILURE_RATE_PCT: '5',
 };
 
+const finalGoNoGo = {
+  decision: 'GO',
+  observationMinutes: 60,
+  requestCount: 100,
+  failures: {},
+  methodEvidenceVerified: true,
+  acceptanceIntegrityVerified: true,
+  sideEffectRecoveryVerified: true,
+  rollbackControlVerified: true,
+  modelMonitoringVerified: true,
+  preproductionObservationVerified: true,
+};
+
 expectCode({}, 'POSTGRES_CUTOVER_MODE_REQUIRED');
 expectCode(
   { ...canaryEnv, TENCENT_PG_CUTOVER_CONFIRM: '' },
@@ -83,9 +96,11 @@ assert.deepStrictEqual(
   assertTencentPostgresCutoverAllowed({
     env: fullEnv,
     isFullCutoverReady: () => true,
+    assertFinalGoNoGoAllowed: () => finalGoNoGo,
   }),
   {
     mode: FULL_CUTOVER_MODE,
+    finalGoNoGo,
     capacity: {
       maxInstances: 4,
       poolMax: 5,

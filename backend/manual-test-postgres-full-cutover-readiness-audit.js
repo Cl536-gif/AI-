@@ -59,6 +59,7 @@ assert.throws(
 );
 assert(gateSource.includes('assertFullPostgresCapacityAllowed'));
 assert(gateSource.includes('parsePostgresRollbackPolicy'));
+assert(gateSource.includes('assertFinalPostgresGoNoGoAllowed'));
 
 const expectedBlockers = [
   'B1｜LangGraph 会话状态仍是进程内存',
@@ -83,5 +84,6 @@ console.log(JSON.stringify({
   blockerCount: expectedBlockers.length,
   processLocalCheckpointerDetected: true,
   fullCapacityGateCandidatePresent: true,
+  finalGoNoGoGateCandidatePresent: true,
   fullCapacityCloudEvidenceMissing: true,
 }));
