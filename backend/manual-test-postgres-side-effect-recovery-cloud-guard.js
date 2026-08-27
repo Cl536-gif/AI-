@@ -9,6 +9,7 @@ const {
 const {
   SIDE_EFFECT_FAULT_CONFIRMATION,
 } = require('./src/langgraph/httpCanaryBoundary');
+const { postCanary } = require('./manual-test-langgraph-postgres-http-canary-cloud');
 
 const validEnv = {
   RUN_005M_SIDE_EFFECT_RECOVERY_VERIFY: CONFIRMATION,
@@ -70,16 +71,38 @@ assert(routeSource.includes('persistAndAcknowledgeGraphTurn'));
 assert(routeSource.includes('isRetryOfRecoveredTurn'));
 assert(routeSource.includes('HTTP_CANARY_FAULT_AFTER_ADVICE_PERSISTENCE'));
 
-console.log(JSON.stringify({
-  batch: '005m-side-effect-recovery-cloud',
-  check: 'local_cloud_guard',
-  status: 'PASS',
-  dedicatedServiceRequired: true,
-  sharedPostgresUserStoreRequired: true,
-  sharedPostgresCheckpointerRequired: true,
-  dualInstanceTopologyRequired: true,
-  controlledFaultSeparatelyConfirmed: true,
-  pendingTurnRecoveryRequired: true,
-  identicalRetryShortCircuitRequired: true,
-  networkUsed: false,
-}));
+async function run() {
+  let requestBody;
+  await postCanary({
+    url: 'http://127.0.0.1:3001/api/chat-langgraph',
+    token: validEnv.LANGGRAPH_HTTP_CANARY_TOKEN,
+    threadId: 'opaque-test-thread',
+    message: 'test message',
+    deviceId: '005d0000-0000-4000-8000-000000000001',
+    fetchImpl: async (_url, init) => {
+      requestBody = JSON.parse(init.body);
+      return { status: 200, text: async () => '{}' };
+    },
+  });
+  assert.strictEqual(requestBody.deviceId, '005d0000-0000-4000-8000-000000000001');
+
+  console.log(JSON.stringify({
+    batch: '005m-side-effect-recovery-cloud',
+    check: 'local_cloud_guard',
+    status: 'PASS',
+    dedicatedServiceRequired: true,
+    sharedPostgresUserStoreRequired: true,
+    sharedPostgresCheckpointerRequired: true,
+    dualInstanceTopologyRequired: true,
+    controlledFaultSeparatelyConfirmed: true,
+    fixedRecoveryIdentityRequired: true,
+    pendingTurnRecoveryRequired: true,
+    identicalRetryShortCircuitRequired: true,
+    networkUsed: false,
+  }));
+}
+
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

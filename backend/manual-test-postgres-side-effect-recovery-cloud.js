@@ -163,6 +163,7 @@ async function runPhase({ verified, pool, checkpointer, graph, store, env = proc
       token,
       threadId: publicThreadId,
       message: MESSAGE,
+      deviceId: FIXED_DEVICE_ID,
       fault: 'after-advice-persistence',
     });
     assertCondition(response.status === 503, 'CONTROLLED_FAULT_NOT_TRIGGERED');
@@ -194,6 +195,7 @@ async function runPhase({ verified, pool, checkpointer, graph, store, env = proc
       token,
       threadId: publicThreadId,
       message: MESSAGE,
+      deviceId: FIXED_DEVICE_ID,
     });
     assertCondition(response.status === 200, 'RECOVERY_HTTP_FAILED');
     const afterState = (await graph.getState(config))?.values;

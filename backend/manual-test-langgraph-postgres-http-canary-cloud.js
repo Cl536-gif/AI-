@@ -120,6 +120,7 @@ async function postCanary({
   token,
   threadId,
   message,
+  deviceId = FIXED_DEVICE_ID,
   holdMs,
   fault,
   fetchImpl = fetch,
@@ -136,7 +137,7 @@ async function postCanary({
     body: JSON.stringify({
       message,
       threadId,
-      deviceId: FIXED_DEVICE_ID,
+      deviceId,
       introAlreadyShown: true,
     }),
     signal: AbortSignal.timeout(60000),
