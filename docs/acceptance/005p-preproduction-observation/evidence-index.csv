@@ -1,0 +1,12 @@
+evidence_id,check,execution_surface,result,source
+005p-01,DMS fixed-identity preflight,Tencent DMS,PASS,raw-results.txt
+005p-02,initial observation fail-closed behavior,CloudBase dual-instance temporary revision,FAIL NOT ACCEPTED AS EVIDENCE,raw-results.txt
+005p-03,explicit-meal corrective deployment,Git and CloudBase revision 003,PASS,raw-results.txt
+005p-04,local fail-closed cloud guard,CloudBase temporary revision,PASS,raw-results.txt
+005p-05,single-request advice persistence smoke,CloudBase public HTTPS endpoint,PASS RECORDED,raw-results.txt
+005p-06,60-minute 100-request observation,CloudBase public HTTPS endpoint,PASS,raw-results.txt
+005p-07,dual-instance load-balancer coverage,CloudBase public HTTPS endpoint,PASS TWO INSTANCES,raw-results.txt
+005p-08,seven zero failure and wait signals,observation metrics,PASS ALL ZERO,raw-results.txt
+005p-09,checkpointer exact cleanup,CloudBase temporary revision,PASS ZERO ROWS,raw-results.txt
+005p-10,UserStore exact cleanup,Tencent DMS,PASS ZERO RESIDUAL,raw-results.txt
+005p-11,production isolation,release boundary,PASS NO CUTOVER,raw-results.txt

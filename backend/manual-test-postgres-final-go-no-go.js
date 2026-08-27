@@ -32,7 +32,11 @@ assert.deepStrictEqual(
 assert(rows.every(({ status }) => status === 'cloud_verified'));
 
 const packages = [...new Set(rows.map(({ evidencePackage }) => evidencePackage))];
-const finalEvidencePackages = [...packages, '005o-bailian-model-monitor'];
+const finalEvidencePackages = [
+  ...packages,
+  '005o-bailian-model-monitor',
+  '005p-preproduction-observation',
+];
 for (const evidencePackage of finalEvidencePackages) {
   const root = path.join(__dirname, '../docs/acceptance', evidencePackage);
   const manifestPath = path.join(root, 'MANIFEST.sha256');
@@ -102,13 +106,11 @@ assert.throws(
 console.log(JSON.stringify({
   batch: '005m-final-go-no-go',
   status: 'PASS',
-  decision: 'NO_GO',
+  decision: 'GO',
   methodEvidenceCount: rows.length,
   evidencePackageCount: finalEvidencePackages.length,
   acceptanceIntegrityVerified: true,
   fullCutoverFailsClosedWithoutFinalEvidence: true,
-  blockerCount: 1,
-  blockers: [
-    'PREPRODUCTION_OBSERVATION_REQUIRED',
-  ],
+  blockerCount: 0,
+  blockers: [],
 }));

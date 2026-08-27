@@ -1,0 +1,97 @@
+005p independent preproduction observation acceptance
+Date: 2026-08-27 Asia/Shanghai
+
+[Git implementation]
+implementation_commits=e4c1741,0d15f22
+implementation_remote_sync=PASS
+unrelated_worktree_changes_excluded=true
+
+[DMS preflight]
+status=PASS
+required_objects_present=true
+fixed_test_identity_absent=true
+existing_test_identity_count=0
+
+[Initial observation attempt]
+status=FAIL
+error_code=PREPRODUCTION_OBSERVATION_FAILED
+request_count=100
+successful_requests=100
+readiness_failures=0
+connection_timeouts=0
+transaction_failures=0
+identity_failures=0
+side_effect_failures=100
+http_5xx=0
+pool_waiting_max=0
+response_format_failures=0
+observation_minutes=60
+instance_count=2
+failure_accepted_as_evidence=false
+root_cause=prompt_did_not_explicitly_select_a_meal
+
+[Corrective deployment]
+revision=003
+explicit_meal_prompt_present=true
+cloud_guard_status=PASS
+two_instances_and_pool_two_required=true
+minimum_observation_minutes=60
+minimum_request_count=100
+seven_zero_signals_required=true
+exact_cleanup_required=true
+response_content_emitted=false
+guard_network_used=false
+
+[Single-request persistence smoke]
+http_status=200
+identity_status=anonymous_resolved
+advice_persistence=recorded
+instance_fingerprint_present=true
+response_content_emitted=false
+smoke_checkpointer_cleanup=PASS
+
+[Final observation]
+batch=005p-preproduction-observation
+status=PASS
+package_version=1.0.4
+phase=observe
+started_at=2026-08-27T07:45:54.252Z
+ended_at=2026-08-27T08:46:06.515Z
+request_count=100
+successful_requests=100
+readiness_failures=0
+connection_timeouts=0
+transaction_failures=0
+identity_failures=0
+side_effect_failures=0
+http_5xx=0
+pool_waiting_max=0
+response_format_failures=0
+observation_minutes=60
+instance_count=2
+distinct_instances=true
+response_content_emitted=false
+
+[Checkpointer cleanup]
+status=PASS
+phase=cleanup-checkpointer
+cleanup=PASS
+cleaned_thread_count=100
+remaining_checkpoint_rows=0
+dms_user_cleanup_required=true
+
+[DMS precise cleanup]
+status=PASS
+minimum_observation_advice_proven=true
+advice_rows_before_cleanup=101
+remaining_identities=0
+remaining_users=0
+remaining_advice=0
+
+[Release boundary]
+preproduction_observation_evidence_complete=true
+remaining_final_blockers=0
+final_evidence_decision=GO
+full_postgres_cutover_completed=false
+production_change_requires_separate_user_authorization=true
+acceptance_contains_sensitive_identifiers=false
