@@ -1,0 +1,8 @@
+evidence_id,check,execution_surface,result,source
+005o-01,credential shape without credential content,CloudBase temporary revision,PASS,raw-results.txt
+005o-02,local cloud guard,CloudBase temporary revision,PASS,raw-results.txt
+005o-03,Bailian application completion probe,Bailian application endpoint,PASS HTTP 200,raw-results.txt
+005o-04,qwen-plus compatible probe,DashScope compatible endpoint,PASS HTTP 200,raw-results.txt
+005o-05,account standing at validation time,both live probes,PASS BILLABLE REQUESTS,raw-results.txt
+005o-06,response privacy boundary,both live probes,PASS NO CONTENT EMITTED,raw-results.txt
+005o-07,production data isolation,temporary revision,PASS SQLITE AND ZERO POSTGRES NETWORK,raw-results.txt

@@ -1,0 +1,45 @@
+[Credential shape check]
+api_key_configured=true
+api_key_expected_prefix=true
+api_key_ascii_only=true
+app_id_configured=true
+app_id_ascii_only=true
+credential_content_emitted=false
+
+[Cloud guard]
+batch=005o-bailian-model-monitor
+check=local_cloud_guard
+status=PASS
+application_and_generic_probes_required=true
+account_standing_failure_classified=true
+authentication_failure_classified=true
+rate_limit_failure_classified=true
+timeout_failure_classified=true
+upstream_failure_classified=true
+response_content_emitted=false
+production_user_store_remains_sqlite=true
+network_used=false
+
+[Live dependency probe]
+batch=005o-bailian-model-monitor
+status=PASS
+application_probe=healthy
+application_http_status=200
+application_latency_ms=1976
+generic_probe=healthy
+generic_http_status=200
+generic_latency_ms=360
+account_standing=verified_by_successful_billable_requests
+credentials_validated=true
+app_id_validated=true
+timeout_ms=20000
+response_content_emitted=false
+production_user_store_remains_sqlite=true
+postgres_network_used=false
+
+[Release boundary]
+model_monitoring_evidence_complete=true
+numeric_account_balance_read=false
+full_postgres_cutover_completed=false
+final_go_no_go_completed=false
+remaining_final_blockers=1

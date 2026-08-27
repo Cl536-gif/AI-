@@ -32,7 +32,8 @@ assert.deepStrictEqual(
 assert(rows.every(({ status }) => status === 'cloud_verified'));
 
 const packages = [...new Set(rows.map(({ evidencePackage }) => evidencePackage))];
-for (const evidencePackage of packages) {
+const finalEvidencePackages = [...packages, '005o-bailian-model-monitor'];
+for (const evidencePackage of finalEvidencePackages) {
   const root = path.join(__dirname, '../docs/acceptance', evidencePackage);
   const manifestPath = path.join(root, 'MANIFEST.sha256');
   assert(fs.existsSync(manifestPath), `缺少验收清单：${evidencePackage}`);
@@ -103,12 +104,11 @@ console.log(JSON.stringify({
   status: 'PASS',
   decision: 'NO_GO',
   methodEvidenceCount: rows.length,
-  evidencePackageCount: packages.length,
+  evidencePackageCount: finalEvidencePackages.length,
   acceptanceIntegrityVerified: true,
   fullCutoverFailsClosedWithoutFinalEvidence: true,
-  blockerCount: 2,
+  blockerCount: 1,
   blockers: [
-    'MODEL_MONITORING_EVIDENCE_REQUIRED',
     'PREPRODUCTION_OBSERVATION_REQUIRED',
   ],
 }));
