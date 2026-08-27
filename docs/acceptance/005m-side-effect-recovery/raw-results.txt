@@ -1,0 +1,73 @@
+005m LangGraph and UserStore side-effect recovery acceptance
+Date: 2026-08-27 Asia/Shanghai
+
+[Git implementation]
+implementation_commits=74f47fc,fca25ba
+implementation_remote_sync=PASS
+unrelated_worktree_changes_excluded=true
+
+[Local fail-closed guard]
+status=PASS
+dedicated_service_required=true
+shared_postgres_user_store_required=true
+shared_postgres_checkpointer_required=true
+dual_instance_topology_required=true
+controlled_fault_separately_confirmed=true
+fixed_recovery_identity_required=true
+pending_turn_recovery_required=true
+identical_retry_short_circuit_required=true
+guard_network_used=false
+
+[Pod A controlled fault]
+status=PASS
+package_version=1.0.4
+phase=fault
+http_status=503
+advice_persisted_before_fault=true
+receipt_pending=true
+partial_advice_rows=1
+fault_instance_fingerprint_present=true
+
+[Pod B recovery]
+status=PASS
+package_version=1.0.4
+phase=recover
+http_status=200
+pending_turn_recovered=true
+receipt_acknowledged=true
+advice_applied_once=true
+identical_retry_did_not_advance_graph=true
+recovery_instance_fingerprint_present=true
+fault_and_recovery_instances_distinct=true
+
+[Final verification]
+status=PASS
+phase=verify
+pending_turn_recovered=true
+receipt_acknowledged=true
+advice_applied_once=true
+identical_retry_did_not_advance_graph=true
+raw_identifiers_stored=false
+user_rows_emitted=false
+
+[Checkpointer cleanup]
+status=PASS
+phase=cleanup-checkpointer
+cleanup=PASS
+remaining_checkpoint_rows=0
+dms_user_cleanup_required=true
+
+[DMS precise cleanup]
+status=PASS
+advice_idempotency_proven=true
+advice_rows_before_cleanup=1
+remaining_identities=0
+remaining_users=0
+remaining_advice=0
+
+[Release boundary]
+side_effect_recovery_evidence_complete=true
+full_postgres_cutover_completed=false
+final_go_no_go_completed=false
+remaining_final_blockers=3
+acceptance_contains_sensitive_identifiers=false

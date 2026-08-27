@@ -1,0 +1,9 @@
+evidence_id,stage,environment,result,source
+005m-se-01,local fail-closed guard,Local Node.js,PASS,raw-results.txt
+005m-se-02,controlled post-advice failure,CloudBase Pod A,PASS EXPECTED HTTP 503,raw-results.txt
+005m-se-03,cross-instance pending turn recovery,CloudBase Pod B,PASS HTTP 200,raw-results.txt
+005m-se-04,idempotent advice persistence,Shared Tencent PostgreSQL,PASS EXACTLY ONCE,raw-results.txt
+005m-se-05,identical retry graph short circuit,Shared LangGraph checkpointer,PASS ONE HUMAN TURN,raw-results.txt
+005m-se-06,raw identifier boundary,PostgreSQL checkpointer,PASS NO RAW IDENTIFIERS,raw-results.txt
+005m-se-07,checkpointer cleanup,CloudBase validation service,PASS ZERO ROWS,raw-results.txt
+005m-se-08,precise business row cleanup,DMS PostgreSQL,PASS ZERO RESIDUE,raw-results.txt
