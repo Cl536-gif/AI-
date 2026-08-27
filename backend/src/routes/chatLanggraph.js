@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { workflow } = require('../langgraph/graph');
 const { createLangGraphCheckpointer } = require('../langgraph/checkpointerProvider');
 const { resolveInternalThreadId } = require('../langgraph/threadScope');
+const { getPostgresPool } = require('../db/postgresPool');
 const {
   FAULT_HEADER,
   HOLD_HEADER,
@@ -396,6 +397,7 @@ router.post('/', async (req, res, next) => {
       ...(checkpointerPolicy.httpCanary ? {
         canaryInstanceFingerprint: httpCanaryInstanceFingerprint,
         canaryLockWaitMs: httpCanaryLockWaitMs,
+        canaryPoolWaiting: getPostgresPool().waitingCount,
       } : {}),
     });
   } catch (err) {
