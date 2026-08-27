@@ -29,7 +29,9 @@ const RUN_ID_PATTERN = /^005p-cloud-[0-9]{8}-[0-9]{2}$/;
 const FIXED_DEVICE_ID = '00590000-0000-4000-8000-000000000001';
 const MIN_OBSERVATION_MINUTES = 60;
 const MIN_REQUEST_COUNT = 100;
-const MESSAGE = '请给一个不依赖个人档案的通用一餐搭配。';
+// 明确指定餐次，确保新用户既获得不依赖档案的通用建议，也确实进入
+// 建议持久化链；仅说“通用一餐”可能被图路由视为继续首次资料采集。
+const MESSAGE = '今天午餐怎么吃？请给一个不依赖个人档案的通用搭配。';
 
 function fail(code, message = code, details) {
   throw Object.assign(new Error(message), { code, details });
