@@ -23,6 +23,7 @@ const {
   invokeGraphWithCheckpointerPolicy,
   resolveHttpCanaryFaultControls,
   resolveHttpCanaryInstanceFingerprint,
+  withGraphThreadPolicy,
 } = require('../langgraph/httpCanaryBoundary');
 const { sanitize: sanitizeEnglish } = require('../services/contentSafety');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
@@ -32,6 +33,11 @@ const {
   prepareGraphContext,
   persistGraphTurn,
 } = require('../services/graphPersistenceCoordinator');
+const {
+  isRetryOfRecoveredTurn,
+  persistAndAcknowledgeGraphTurn,
+  recoverPendingGraphTurn,
+} = require('../services/graphTurnPersistenceRecovery');
 const {
   looksLikePrivacyRequest,
   classifyPrivacyOnboardingMessage,
@@ -222,7 +228,7 @@ router.post('/', async (req, res, next) => {
     if (anonymousUserId && explicitTimezone) {
       await userService.updateTimezone(anonymousUserId, explicitTimezone);
     }
-    const longTermContext = anonymousUserId ? await prepareGraphContext(anonymousUserId) : null;
+    let longTermContext = anonymousUserId ? await prepareGraphContext(anonymousUserId) : null;
     if (longTermContext?.temporalContext) {
       longTermContext.temporalContext.explicitMealTarget = detectExplicitMealTarget(graphMessage);
     }
@@ -237,29 +243,15 @@ router.post('/', async (req, res, next) => {
     inputMessages.push({ role: 'human', content: graphMessage });
     const isHomepageHandoff = !threadId && introAlreadyShown;
     let httpCanaryLockWaitMs = null;
-    const result = await invokeGraphWithCheckpointerPolicy({
-      graph: graphWithCheckpointer,
-      input: {
-        messages: inputMessages,
-        longTermContext,
-        // 首页的“食堂还是外卖”由 /api/chat 发出，第一条答案才切到
-        // LangGraph。必须把上一问的字段显式带进状态，否则“食堂”能靠
-        // 关键词识别，但“都吃/换着吃”这类依赖上下文的省略回答会丢失。
-        ...(isHomepageHandoff ? { lastAskedSlot: 'scene' } : {}),
-      },
-      config,
-      policy: checkpointerPolicy,
-      holdMs: httpCanaryControls.holdMs,
-      onLockAcquired: ({ waitMs }) => { httpCanaryLockWaitMs = waitMs; },
-    });
-    const persistence = anonymousUserId
-      ? await persistGraphTurn(
-          anonymousUserId,
-          graphMessage,
-          resolvedThreadId,
-          result
-        )
-      : {
+    const graphInput = {
+      messages: inputMessages,
+      longTermContext,
+      // 首页的“食堂还是外卖”由 /api/chat 发出，第一条答案才切到
+      // LangGraph。必须把上一问的字段显式带进状态，否则“食堂”能靠
+      // 关键词识别，但“都吃/换着吃”这类依赖上下文的省略回答会丢失。
+      ...(isHomepageHandoff ? { lastAskedSlot: 'scene' } : {}),
+    };
+    const identityNotProvidedPersistence = {
           profilePersistence: { status: 'identity_not_provided', profile: null },
           advicePersistence: { status: 'identity_not_provided', records: [] },
           serviceStatus: null,
@@ -268,7 +260,84 @@ router.post('/', async (req, res, next) => {
           planRecovery: { status: 'not_applicable', action: 'none', reason: 'identity_not_provided' },
           planRevision: { status: 'not_requested', plan: null },
           initialLongTermPlan: { status: 'not_requested', plan: null },
-        };
+    };
+    let result;
+    let persistence;
+    if (checkpointerPolicy.requiresThreadLock && anonymousUserId) {
+      const operationId = crypto.randomUUID();
+      const turn = await withGraphThreadPolicy({
+        config,
+        policy: checkpointerPolicy,
+        holdMs: httpCanaryControls.holdMs,
+        onLockAcquired: ({ waitMs }) => { httpCanaryLockWaitMs = waitMs; },
+        work: async () => {
+          const recovery = await recoverPendingGraphTurn({
+            graph: graphWithCheckpointer,
+            config,
+            userId: anonymousUserId,
+            threadId: resolvedThreadId,
+            persistTurn: persistGraphTurn,
+          });
+          // 恢复可能刚写入档案、服务状态或长期事件；当前轮必须重新读取
+          // 上下文，不能继续使用锁外取得的旧快照。
+          if (recovery.status === 'recovered') {
+            longTermContext = await prepareGraphContext(anonymousUserId);
+            if (longTermContext?.temporalContext) {
+              longTermContext.temporalContext.explicitMealTarget =
+                detectExplicitMealTarget(graphMessage);
+            }
+            if (longTermContext && testPersona) {
+              longTermContext.developerTestPersona = testPersona;
+            }
+          }
+          // HTTP故障后的客户端通常会原样重发同一消息。旧轮次副作用恢复
+          // 完成后直接复用该checkpoint结果，不能再次invoke让对话前进
+          // 第二次。只有不同的新消息才进入下一轮图执行。
+          if (isRetryOfRecoveredTurn(recovery, graphMessage)) {
+            return { result: recovery.state, persistence: recovery.persistence };
+          }
+          const lockedResult = await graphWithCheckpointer.invoke({
+            ...graphInput,
+            longTermContext,
+            persistenceRequest: { operationId },
+          }, config);
+          const lockedPersistence = await persistAndAcknowledgeGraphTurn({
+            graph: graphWithCheckpointer,
+            config,
+            userId: anonymousUserId,
+            threadId: resolvedThreadId,
+            state: lockedResult,
+            operationId,
+            persistTurn: persistGraphTurn,
+            afterStep: httpCanaryControls.failAfterAdvicePersistence
+              ? ({ step }) => {
+                  if (step === 'advice') {
+                    throw Object.assign(new Error('005m受控故障已在建议持久化后触发'), {
+                      code: 'HTTP_CANARY_FAULT_AFTER_ADVICE_PERSISTENCE',
+                      statusCode: 503,
+                    });
+                  }
+                }
+              : null,
+          });
+          return { result: lockedResult, persistence: lockedPersistence };
+        },
+      });
+      result = turn.result;
+      persistence = turn.persistence;
+    } else {
+      result = await invokeGraphWithCheckpointerPolicy({
+        graph: graphWithCheckpointer,
+        input: graphInput,
+        config,
+        policy: checkpointerPolicy,
+        holdMs: httpCanaryControls.holdMs,
+        onLockAcquired: ({ waitMs }) => { httpCanaryLockWaitMs = waitMs; },
+      });
+      persistence = anonymousUserId
+        ? await persistGraphTurn(anonymousUserId, graphMessage, resolvedThreadId, result)
+        : identityNotProvidedPersistence;
+    }
 
     const lastHumanIndex = result.messages.map((item) => getMessageRole(item)).lastIndexOf('human');
     const graphReplies = result.messages
@@ -330,6 +399,9 @@ router.post('/', async (req, res, next) => {
       } : {}),
     });
   } catch (err) {
+    if (Number.isInteger(err?.statusCode)) {
+      return res.status(err.statusCode).json({ error: err.message, code: err.code });
+    }
     next(err);
   }
 });

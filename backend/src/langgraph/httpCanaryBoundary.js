@@ -6,6 +6,7 @@ const TOKEN_HEADER = 'x-diet-canary-token';
 const HOLD_HEADER = 'x-diet-canary-hold-ms';
 const FAULT_HEADER = 'x-diet-canary-fault';
 const FAULT_CONFIRMATION = 'CONFIRMED_005H_HTTP_CANARY_FAULT_INJECTION';
+const SIDE_EFFECT_FAULT_CONFIRMATION = 'CONFIRMED_005M_SIDE_EFFECT_FAULT_INJECTION';
 const MAX_HOLD_MS = 15000;
 
 function createBoundaryError(code, statusCode, message = code) {
@@ -50,13 +51,25 @@ function resolveHttpCanaryFaultControls({
   env = process.env,
 } = {}) {
   if (!policy?.httpCanary) {
-    return Object.freeze({ holdMs: 0, failAfterIdentity: false });
+    return Object.freeze({
+      holdMs: 0,
+      failAfterIdentity: false,
+      failAfterAdvicePersistence: false,
+    });
   }
   const holdText = String(holdMs || '').trim();
   const faultText = String(fault || '').trim().toLowerCase();
   const requested = Boolean(holdText || faultText);
-  if (requested && String(env.RUN_005H_FAULT_INJECTION || '').trim() !== FAULT_CONFIRMATION) {
-    throw createBoundaryError('HTTP_CANARY_FAULT_INJECTION_NOT_CONFIRMED', 403);
+  if (requested) {
+    const requiredConfirmation = faultText === 'after-advice-persistence'
+      ? SIDE_EFFECT_FAULT_CONFIRMATION
+      : FAULT_CONFIRMATION;
+    const configuredConfirmation = faultText === 'after-advice-persistence'
+      ? String(env.RUN_005M_SIDE_EFFECT_FAULT_INJECTION || '').trim()
+      : String(env.RUN_005H_FAULT_INJECTION || '').trim();
+    if (configuredConfirmation !== requiredConfirmation) {
+      throw createBoundaryError('HTTP_CANARY_FAULT_INJECTION_NOT_CONFIRMED', 403);
+    }
   }
   if (holdText && !/^\d+$/.test(holdText)) {
     throw createBoundaryError('HTTP_CANARY_HOLD_INVALID', 400);
@@ -65,12 +78,39 @@ function resolveHttpCanaryFaultControls({
   if (!Number.isSafeInteger(parsedHoldMs) || parsedHoldMs < 0 || parsedHoldMs > MAX_HOLD_MS) {
     throw createBoundaryError('HTTP_CANARY_HOLD_INVALID', 400);
   }
-  if (faultText && faultText !== 'after-identity') {
+  if (faultText && !['after-identity', 'after-advice-persistence'].includes(faultText)) {
     throw createBoundaryError('HTTP_CANARY_FAULT_INVALID', 400);
   }
   return Object.freeze({
     holdMs: parsedHoldMs,
     failAfterIdentity: faultText === 'after-identity',
+    failAfterAdvicePersistence: faultText === 'after-advice-persistence',
+  });
+}
+
+async function withGraphThreadPolicy({
+  config,
+  policy,
+  pool,
+  withLock = withPostgresThreadAdvisoryLock,
+  holdMs = 0,
+  onLockAcquired,
+  work,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  if (typeof work !== 'function') {
+    throw createBoundaryError('HTTP_CANARY_WORK_INVALID', 500);
+  }
+  if (!policy?.requiresThreadLock) return work(Object.freeze({ waitMs: 0 }));
+  const scope = config?.configurable?.thread_id;
+  return withLock({
+    pool: pool || getPostgresPool(),
+    scope,
+    work: async ({ waitMs }) => {
+      if (typeof onLockAcquired === 'function') onLockAcquired({ waitMs });
+      if (holdMs > 0) await sleep(holdMs);
+      return work(Object.freeze({ waitMs }));
+    },
   });
 }
 
@@ -88,16 +128,9 @@ async function invokeGraphWithCheckpointerPolicy({
   if (!graph || typeof graph.invoke !== 'function') {
     throw createBoundaryError('HTTP_CANARY_GRAPH_INVALID', 500);
   }
-  if (!policy?.requiresThreadLock) return graph.invoke(input, config);
-  const scope = config?.configurable?.thread_id;
-  return withLock({
-    pool: pool || getPostgresPool(),
-    scope,
-    work: async ({ waitMs }) => {
-      if (typeof onLockAcquired === 'function') onLockAcquired({ waitMs });
-      if (holdMs > 0) await sleep(holdMs);
-      return graph.invoke(input, config);
-    },
+  return withGraphThreadPolicy({
+    config, policy, pool, withLock, holdMs, onLockAcquired, sleep,
+    work: () => graph.invoke(input, config),
   });
 }
 
@@ -106,10 +139,12 @@ module.exports = {
   FAULT_HEADER,
   HOLD_HEADER,
   MAX_HOLD_MS,
+  SIDE_EFFECT_FAULT_CONFIRMATION,
   TOKEN_HEADER,
   assertHttpCanaryRequest,
   invokeGraphWithCheckpointerPolicy,
   resolveHttpCanaryFaultControls,
   resolveHttpCanaryInstanceFingerprint,
   safeEqual,
+  withGraphThreadPolicy,
 };

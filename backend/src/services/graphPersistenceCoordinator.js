@@ -143,13 +143,20 @@ function createGraphPersistenceCoordinator({
   async function persistTurn(userId, message, threadId, state, {
     now = new Date().toISOString(),
     timezone = 'Asia/Shanghai',
+    afterStep = null,
   } = {}) {
+    const notifyStep = async (step, value) => {
+      if (typeof afterStep === 'function') await afterStep({ step, value });
+    };
     const activeStore = resolveActiveStore();
     const profilePersistence = await profileWriter(userId, state, { store: activeStore, now });
+    await notifyStep('profile', profilePersistence);
     const advicePersistence = await adviceWriter(userId, threadId, state, { store: activeStore, now });
+    await notifyStep('advice', advicePersistence);
     const serviceStatus = await synchronizeGraphServiceChoice(
       userId, state, { store: activeStore, now }
     );
+    await notifyStep('service_status', serviceStatus);
     let eventPersistence;
     try {
       eventPersistence = await eventProcessor(userId, message, {
@@ -168,20 +175,25 @@ function createGraphPersistenceCoordinator({
         error: err.message,
       };
     }
+    await notifyStep('events', eventPersistence);
     const planAdjustment = await planLifecycleProcessor(
       userId, eventPersistence, { store: activeStore, now }
     );
+    await notifyStep('plan_adjustment', planAdjustment);
     const planRecovery = planAdjustment.action === 'plan_paused'
       ? { status: 'awaiting_choice', action: 'none', reason: 'plan_just_paused' }
       : await planRecoveryProcessor(userId, message, { store: activeStore, now });
+    await notifyStep('plan_recovery', planRecovery);
     // 草稿创建、计算审计和正式启用任一步失败都会抛出，路由不会把已经
     // 生成但没有持久化成功的“新版方案”返回给用户。
     const planRevision = await planRevisionProcessor(
       userId, state?.planRevisionDraftCommand, { store: activeStore, now }
     );
+    await notifyStep('plan_revision', planRevision);
     const initialLongTermPlan = await initialPlanProcessor(
       userId, state?.initialLongTermPlanCommand, { store: activeStore, now }
     );
+    await notifyStep('initial_long_term_plan', initialLongTermPlan);
     const effectiveServiceStatus = initialLongTermPlan.status === 'delivered'
       ? await userService.getServiceStatus(userId, { store: activeStore })
       : serviceStatus;

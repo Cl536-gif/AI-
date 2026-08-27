@@ -45,6 +45,20 @@ const DietState = Annotation.Root({
     default: () => null,
   }),
 
+  // 共享PostgreSQL checkpointer模式下使用的不透明轮次操作号。它不含
+  // 用户ID、公开threadId或消息正文；只有对应完成回执写入后，下一轮
+  // 才能继续推进。进程在图完成后、业务副作用完成前退出时，路由会先
+  // 根据当前checkpoint恢复这一轮副作用。
+  persistenceRequest: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  persistenceReceipt: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
   // 暂停计划后用户明确选择“按现在情况重做”时进入的专用对话状态。
   // 只负责收集持续变化并让用户确认清单；确认完成前不会创建新版草稿。
   pendingPlanRevision: Annotation({

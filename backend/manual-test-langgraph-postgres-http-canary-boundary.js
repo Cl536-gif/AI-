@@ -14,10 +14,12 @@ const {
 } = require('./src/langgraph/checkpointerProvider');
 const {
   FAULT_CONFIRMATION,
+  SIDE_EFFECT_FAULT_CONFIRMATION,
   assertHttpCanaryRequest,
   invokeGraphWithCheckpointerPolicy,
   resolveHttpCanaryFaultControls,
   resolveHttpCanaryInstanceFingerprint,
+  withGraphThreadPolicy,
 } = require('./src/langgraph/httpCanaryBoundary');
 
 const token = 'test-only-http-canary-token-32-characters';
@@ -38,6 +40,7 @@ const env = {
   LANGGRAPH_THREAD_HMAC_SECRET: 'test-only-http-canary-hmac-secret-32-characters',
   HOSTNAME: '005h-local-instance-a',
   RUN_005H_FAULT_INJECTION: FAULT_CONFIRMATION,
+  RUN_005M_SIDE_EFFECT_FAULT_INJECTION: SIDE_EFFECT_FAULT_CONFIRMATION,
 };
 
 const cutover = assertTencentPostgresCutoverAllowed({ env });
@@ -68,11 +71,23 @@ assert.strictEqual(assertHttpCanaryRequest({ policy, token, env }).authorized, t
 assert.strictEqual(resolveHttpCanaryInstanceFingerprint({ policy, env }).length, 64);
 assert.deepStrictEqual(
   resolveHttpCanaryFaultControls({ policy, holdMs: '500', fault: 'after-identity', env }),
-  { holdMs: 500, failAfterIdentity: true }
+  { holdMs: 500, failAfterIdentity: true, failAfterAdvicePersistence: false }
+);
+assert.deepStrictEqual(
+  resolveHttpCanaryFaultControls({ policy, fault: 'after-advice-persistence', env }),
+  { holdMs: 0, failAfterIdentity: false, failAfterAdvicePersistence: true }
 );
 expectCode(
   () => resolveHttpCanaryFaultControls({
     policy, holdMs: '500', env: { ...env, RUN_005H_FAULT_INJECTION: '' },
+  }),
+  'HTTP_CANARY_FAULT_INJECTION_NOT_CONFIRMED'
+);
+expectCode(
+  () => resolveHttpCanaryFaultControls({
+    policy,
+    fault: 'after-advice-persistence',
+    env: { ...env, RUN_005M_SIDE_EFFECT_FAULT_INJECTION: '' },
   }),
   'HTTP_CANARY_FAULT_INJECTION_NOT_CONFIRMED'
 );
@@ -112,6 +127,17 @@ async function run() {
     calls.map((entry) => entry[0]),
     ['lock', 'wait', 'sleep', 'invoke']
   );
+  const lifecycleCalls = [];
+  await withGraphThreadPolicy({
+    config: { configurable: { thread_id: 'internal-thread-scope' } },
+    policy,
+    pool: {},
+    withLock: async ({ work }) => work({ waitMs: 7 }),
+    work: async () => {
+      lifecycleCalls.push('recover', 'invoke', 'persist', 'acknowledge');
+    },
+  });
+  assert.deepStrictEqual(lifecycleCalls, ['recover', 'invoke', 'persist', 'acknowledge']);
   const routeSource = fs.readFileSync(
     path.join(__dirname, 'src/routes/chatLanggraph.js'),
     'utf8'
@@ -129,6 +155,8 @@ async function run() {
     sameThreadLockWrapsGraphInvoke: true,
     instanceFingerprintIsHmacOnly: true,
     controlledFaultInjectionGated: true,
+    sideEffectFaultInjectionSeparatelyGated: true,
+    sameThreadLockWrapsFullTurnLifecycle: true,
     lockWaitObservableInCanaryOnly: true,
     sqlitePathUnchanged: true,
     productionReady: false,
