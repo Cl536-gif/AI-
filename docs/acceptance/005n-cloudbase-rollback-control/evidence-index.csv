@@ -1,0 +1,8 @@
+evidence_id,check,execution_surface,result,source
+005n-01,local cloud guard,CloudBase stable revision,PASS,raw-results.txt
+005n-02,stable revision baseline,CloudBase stable revision,PASS,raw-results.txt
+005n-03,rollback signal,CloudBase canary revision,PASS,raw-results.txt
+005n-04,revision distinction,CloudBase canary revision,PASS,raw-results.txt
+005n-05,manual control-plane rollback,CloudBase deployment control plane,PASS,raw-results.txt
+005n-06,stable revision restoration,CloudBase restored stable revision,PASS,raw-results.txt
+005n-07,PostgreSQL isolation,all three phases,PASS ZERO NETWORK AND MUTATION,raw-results.txt

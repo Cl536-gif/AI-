@@ -106,9 +106,8 @@ console.log(JSON.stringify({
   evidencePackageCount: packages.length,
   acceptanceIntegrityVerified: true,
   fullCutoverFailsClosedWithoutFinalEvidence: true,
-  blockerCount: 3,
+  blockerCount: 2,
   blockers: [
-    'ROLLBACK_CONTROL_EVIDENCE_REQUIRED',
     'MODEL_MONITORING_EVIDENCE_REQUIRED',
     'PREPRODUCTION_OBSERVATION_REQUIRED',
   ],

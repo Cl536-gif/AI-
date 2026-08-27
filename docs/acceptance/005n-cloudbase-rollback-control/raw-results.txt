@@ -1,0 +1,61 @@
+[Cloud guard]
+batch=005n-cloudbase-rollback-control
+check=local_cloud_guard
+status=PASS
+dedicated_service_required=true
+same_service_revision_transition_required=true
+rollback_signal_required=true
+manual_control_plane_action_required=true
+stable_revision_fingerprint_required=true
+production_user_store_remains_sqlite=true
+postgres_network_used=false
+
+[Stable baseline]
+status=PASS
+phase=baseline
+run_id=005n-cloud-20260827-01
+role=stable
+artifact_id=005k-sqlite-rollback-v3
+source_digests_matched=true
+health_passed=true
+revision_fingerprint=[REDACTED_SHA256]
+revision_identity_source=cloudbase_hostname
+postgres_network_used=false
+postgres_rows_mutated=false
+stable_revision_recorded=true
+
+[Canary signal]
+status=PASS
+phase=signal
+run_id=005n-cloud-20260827-01
+role=canary
+source_digests_matched=true
+health_passed=true
+revision_fingerprint=[REDACTED_DISTINCT_SHA256]
+canary_revision_distinct=true
+rollback_signal=rollback
+rollback_reason_count=2
+control_plane_action_required=true
+postgres_network_used=false
+postgres_rows_mutated=false
+
+[Control-plane rollback verification]
+status=PASS
+phase=verify
+run_id=005n-cloud-20260827-01
+role=stable
+source_digests_matched=true
+health_passed=true
+revision_fingerprint=[REDACTED_MATCHES_BASELINE_SHA256]
+stable_revision_restored=true
+canary_revision_replaced=true
+control_plane_action_confirmed=true
+production_user_store_remains_sqlite=true
+postgres_network_used=false
+postgres_rows_mutated=false
+
+[Release boundary]
+rollback_control_evidence_complete=true
+full_postgres_cutover_completed=false
+final_go_no_go_completed=false
+remaining_final_blockers=2
