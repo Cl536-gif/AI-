@@ -1,4 +1,7 @@
-FROM node:22-alpine
+# @xenova/transformers uses onnxruntime-node, which requires glibc's dynamic
+# loader. Use Debian slim instead of Alpine (musl) so the native runtime loads
+# correctly in CloudBase Run.
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
