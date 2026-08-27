@@ -27,6 +27,13 @@ COPY local-kb-tool/src/vectorStore.js ./local-kb-tool/src/vectorStore.js
 COPY local-kb-tool/data/index/diet/index.json ./local-kb-tool/data/index/diet/index.json
 COPY local-kb-tool/data/index/body-composition/index.json ./local-kb-tool/data/index/body-composition/index.json
 
+# Bundle only the four files needed for offline query embeddings (~23 MB).
+# This prevents first-request downloads without copying local-kb-tool/node_modules.
+COPY local-kb-tool/models/Xenova/bge-small-zh-v1.5/config.json ./local-kb-tool/models/Xenova/bge-small-zh-v1.5/config.json
+COPY local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer.json ./local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer.json
+COPY local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer_config.json ./local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer_config.json
+COPY local-kb-tool/models/Xenova/bge-small-zh-v1.5/onnx/model_quantized.onnx ./local-kb-tool/models/Xenova/bge-small-zh-v1.5/onnx/model_quantized.onnx
+
 ENV NODE_ENV=production
 ENV PORT=3001
 

@@ -22,3 +22,11 @@
 !local-kb-tool/data/index/diet/index.json
 !local-kb-tool/data/index/body-composition
 !local-kb-tool/data/index/body-composition/index.json
+!local-kb-tool/models
+!local-kb-tool/models/Xenova
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5/config.json
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer.json
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5/tokenizer_config.json
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5/onnx
+!local-kb-tool/models/Xenova/bge-small-zh-v1.5/onnx/model_quantized.onnx
