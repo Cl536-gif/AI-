@@ -1,5 +1,7 @@
 const express = require('express');
 const chatService = require('../services/chatService');
+const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
+const { buildLongTermTimeline } = require('../services/longTermTimelineService');
 
 const router = express.Router();
 
@@ -17,16 +19,40 @@ function validateUserId(userId) {
 }
 
 router.post('/greeting', async (req, res, next) => {
-  const { userId } = req.body || {};
+  const { userId, deviceId, testPersona } = req.body || {};
 
   const userIdError = validateUserId(userId);
   if (userIdError) {
     return res.status(400).json({ error: userIdError });
   }
+  const allowedTestPersonas = new Set([
+    'new_contact', 'free', 'long_term',
+    'long_term_day2', 'long_term_day8', 'long_term_plateau',
+  ]);
+  if (testPersona !== undefined &&
+      (process.env.NODE_ENV === 'production' || !allowedTestPersonas.has(testPersona))) {
+    return res.status(400).json({ error: 'testPersona 格式不正确' });
+  }
 
   try {
-    const result = await chatService.getGreeting({ userId });
-    res.json({ reply: result.reply, sessionId: result.sessionId });
+    let longTermTimeline = null;
+    if (deviceId) {
+      validateDeviceId(deviceId);
+      const anonymousUserId = await resolveAnonymousUser(deviceId);
+      longTermTimeline = await buildLongTermTimeline(anonymousUserId);
+    }
+    const result = await chatService.getGreeting({
+      userId,
+      forceReturning: Boolean(testPersona && testPersona !== 'new_contact'),
+      longTermTimeline,
+    });
+    res.json({
+      reply: result.reply,
+      replies: result.replies || [result.reply],
+      sessionId: result.sessionId,
+      nextRoute: result.nextRoute || null,
+      privacyOnboardingPending: Boolean(result.privacyOnboardingPending),
+    });
   } catch (err) {
     next(err);
   }
@@ -45,7 +71,7 @@ router.post('/', async (req, res, next) => {
   if (message.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ error: '消息内容过长' });
   }
-  if (sessionId !== undefined && typeof sessionId !== 'string') {
+  if (sessionId !== undefined && sessionId !== null && typeof sessionId !== 'string') {
     return res.status(400).json({ error: 'sessionId 格式不正确' });
   }
 
@@ -55,7 +81,12 @@ router.post('/', async (req, res, next) => {
       message: message.trim(),
       sessionId,
     });
-    res.json({ reply: result.reply, sessionId: result.sessionId });
+    res.json({
+      reply: result.reply,
+      replies: result.replies || [result.reply],
+      sessionId: result.sessionId,
+      nextRoute: result.nextRoute || null,
+    });
   } catch (err) {
     next(err);
   }

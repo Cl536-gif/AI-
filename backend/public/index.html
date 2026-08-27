@@ -10,6 +10,20 @@
 <div class="app">
   <header class="app__header">饮食秘书</header>
 
+  <section id="developer-persona" class="developer-persona" hidden>
+    <label for="developer-persona-select">开发者测试通道</label>
+    <select id="developer-persona-select">
+      <option value="new_contact">企业微信新用户（刚开始聊天）</option>
+      <option value="free">免费用户</option>
+      <option value="long_term">长期用户</option>
+      <option value="long_term_day2">长期用户 · 第2天回访</option>
+      <option value="long_term_day8">长期用户 · 第8天周复盘</option>
+      <option value="long_term_plateau">长期用户 · 可能平台期</option>
+    </select>
+    <span id="developer-persona-status">正在准备测试身份…</span>
+    <a id="developer-data-link" class="developer-data-link" href="/user-data-dashboard.html" target="_blank" rel="noopener">查看当前用户后台数据</a>
+  </section>
+
   <main id="messages" class="app__messages" aria-live="polite"></main>
 
   <form id="composer" class="app__composer">

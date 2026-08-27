@@ -5,6 +5,7 @@ const config = require('./config');
 const chatRouter = require('./routes/chat');
 const chatLocalRouter = require('./routes/chatLocal');
 const chatLanggraphRouter = require('./routes/chatLanggraph');
+const debugUserDataRouter = require('./routes/debugUserData');
 const { configureUserStoreFromEnv } = require('./stores/userStoreProvider');
 const { createPostgresReadinessHandler } = require('./db/postgresReadiness');
 const { createGracefulShutdown } = require('./serverLifecycle');
@@ -27,6 +28,7 @@ app.get('/api/ready', createPostgresReadinessHandler());
 app.use('/api/chat', chatRouter);
 app.use('/api/chat-local', chatLocalRouter);
 app.use('/api/chat-langgraph', chatLanggraphRouter);
+app.use('/api/debug/user-data', debugUserDataRouter);
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 

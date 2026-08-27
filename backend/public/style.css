@@ -47,6 +47,45 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.developer-persona {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #fffbe6;
+  font-size: 13px;
+}
+
+.developer-persona[hidden] {
+  display: none;
+}
+
+.developer-persona select {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  font: inherit;
+}
+
+.developer-persona span {
+  grid-column: 1 / -1;
+  color: #6b5d21;
+}
+
+.developer-data-link {
+  grid-column: 1 / -1;
+  justify-self: start;
+  color: #08783d;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
 .app__messages {
   flex: 1 1 auto;
   overflow-y: auto;

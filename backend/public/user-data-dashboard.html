@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>饮食秘书 · 用户数据看板</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f6f5;color:#18231d;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}header{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid #dce4df;padding:18px 24px}h1{font-size:22px;margin:0 0 6px}.sub{color:#607066;font-size:13px}.wrap{max-width:1180px;margin:0 auto;padding:22px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}.toolbar select,.toolbar button{border:1px solid #cbd8d0;background:#fff;border-radius:10px;padding:10px 12px;font-size:14px}.toolbar button{background:#11bb61;color:#fff;border-color:#11bb61;cursor:pointer}.metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px}.metric,.panel{background:#fff;border:1px solid #dce4df;border-radius:14px}.metric{padding:14px}.metric b{display:block;font-size:22px;margin-top:7px}.metric span,.muted{color:#6b786f;font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{padding:18px;min-width:0}.panel h2{font-size:17px;margin:0 0 14px}.wide{grid-column:1/-1}.entry{border-top:1px solid #edf1ee;padding:12px 0}.entry:first-of-type{border-top:0}.entry-head{display:flex;gap:8px;justify-content:space-between;align-items:start}.tag{display:inline-block;background:#e6f8ee;color:#08783d;border-radius:999px;padding:3px 8px;font-size:11px}.tag.formal{background:#e8efff;color:#2856aa}.content{white-space:pre-wrap;line-height:1.65;margin-top:8px;font-size:14px}.json{white-space:pre-wrap;word-break:break-word;background:#f7f9f8;border-radius:9px;padding:10px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}.empty{color:#87938b;padding:10px 0}.warning{background:#fff8df;color:#755a00;border:1px solid #f1dc91;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:13px}@media(max-width:760px){.metrics{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.wrap{padding:14px}}
+  </style>
+</head>
+<body>
+  <header><h1>用户数据看板</h1><div class="sub">本地测试专用 · 免费建议与正式长期方案分开展示</div></header>
+  <main class="wrap">
+    <div class="toolbar"><select id="userSelect" aria-label="选择用户"></select><button id="currentButton">查看当前浏览器身份</button><button id="refreshButton">刷新数据</button></div>
+    <div id="warning" class="warning" hidden></div>
+    <section class="metrics" id="metrics"></section>
+    <section class="grid">
+      <div class="panel"><h2>当前基础档案</h2><div id="profile"></div></div>
+      <div class="panel"><h2>服务与计算状态</h2><div id="service"></div></div>
+      <div class="panel wide"><h2>秘书建议历史</h2><div id="advice"></div></div>
+      <div class="panel"><h2>正式长期方案</h2><div id="plans"></div></div>
+      <div class="panel"><h2>热量计算审计</h2><div id="calculations"></div></div>
+      <div class="panel"><h2>用户实际事件</h2><div id="events"></div></div>
+      <div class="panel"><h2>档案修改记录</h2><div id="revisions"></div></div>
+    </section>
+  </main>
+  <script>
+    const $=id=>document.getElementById(id); const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const requestedDeviceId=new URLSearchParams(location.search).get('deviceId');let selectedUserId=null;
+    async function json(url){const r=await fetch(url);const d=await r.json();if(!r.ok)throw new Error(d.error||'读取失败');return d}
+    function empty(text='尚未产生记录'){return `<div class="empty">${text}</div>`}
+    function fmt(t){return t?new Date(t).toLocaleString('zh-CN',{hour12:false}):'—'}
+    function render(snapshot){const a=snapshot.adviceHistory||[],p=snapshot.plans||[],e=snapshot.events||[],c=snapshot.energyCalculations||[],r=snapshot.profileRevisions||[],t=snapshot.timeline||{},tc=snapshot.temporalContext||{};
+      $('metrics').innerHTML=[['档案版本',snapshot.profile?.profileVersion||0],['建议记录',a.length],['正式方案',p.length],['实际事件',e.length],['热量计算',c.length]].map(x=>`<div class="metric"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+      $('profile').innerHTML=snapshot.profile?`<div class="muted">更新于 ${fmt(snapshot.profile.updatedAt)}</div><div class="json">${esc(JSON.stringify(snapshot.profile.profile,null,2))}</div>`:empty('尚未建立基础档案');
+      $('service').innerHTML=`<div class="entry"><b>身份</b><div class="content">${esc(snapshot.userId)}</div></div><div class="entry"><b>服务状态</b><div class="content">${esc(snapshot.serviceStatus?.status||'free')}</div></div><div class="entry"><b>用户当地时间</b><div class="content">${esc(tc.timezone||'Asia/Shanghai')} · ${esc(tc.localDate||'—')} ${esc(tc.weekday||'—')} ${esc(tc.localTime||'—')}<br>当前：${esc(tc.mealTiming?.currentWindowLabel||'—')} · 默认下一餐：${esc(tc.mealTiming?.suggestedMealLabel||'—')}</div></div><div class="entry"><b>长期时间轴</b><div class="content">方案第 ${esc(t.planDay||'—')} 天 · 实际记录 ${esc(t.recordedDayCount||0)} 天 · 连续记录 ${esc(t.consecutiveRecordedDays||0)} 天<br>本次待办：${esc(t.dueCheckIn||'无')} · 下次周复盘：第 ${esc(t.nextWeeklyReviewDay||'—')} 天<br>体重趋势：${esc(t.weightTrend?.status||'尚无')}</div></div><div class="entry"><b>说明</b><div class="content">免费建议会保存，但不会冒充正式长期方案；只有长期方案才会产生阶段版本和计算审计。</div></div>`;
+      $('advice').innerHTML=a.length?a.map(x=>`<article class="entry"><div class="entry-head"><div><span class="tag">${x.adviceType==='initial_meal_plan'?'第一版餐食建议':'当餐调整建议'}</span> <span class="muted">${esc(x.serviceMode)}</span></div><span class="muted">${fmt(x.createdAt)}</span></div><div class="content">${esc(x.content)}</div></article>`).join(''):empty('尚未保存秘书给出的餐食建议');
+      $('plans').innerHTML=p.length?p.map(x=>`<article class="entry"><div class="entry-head"><span class="tag formal">第${x.planVersion}版 · ${esc(x.status)}</span><span class="muted">${fmt(x.createdAt)}</span></div><div class="json">${esc(JSON.stringify(x.plan,null,2))}</div></article>`).join(''):empty('尚未建立正式长期方案');
+      $('calculations').innerHTML=c.length?c.map(x=>`<article class="entry"><div class="entry-head"><b>${esc(x.formulaId)} · ${esc(x.formulaVersion)}</b><span class="muted">${fmt(x.createdAt)}</span></div><div class="json">${esc(JSON.stringify({inputs:x.inputs,outputs:x.outputs,assumptions:x.assumptions},null,2))}</div></article>`).join(''):empty('尚未进行正式热量计算');
+      $('events').innerHTML=e.length?e.map(x=>`<article class="entry"><div class="entry-head"><span class="tag">${esc(x.eventType)}</span><span class="muted">${fmt(x.occurredAt)}</span></div><div class="content">${esc(x.payload?.summary||JSON.stringify(x.payload))}</div></article>`).join(''):empty('尚未记录用户已经发生的饮食或运动事件');
+      $('revisions').innerHTML=r.length?r.map(x=>`<article class="entry"><div class="entry-head"><b>第${x.profileVersion}版</b><span class="muted">${fmt(x.createdAt)}</span></div><div class="content">修改：${esc((x.changedFields||[]).join('、'))}</div></article>`).join(''):empty();
+      $('warning').hidden=Boolean(a.length||p.length); if(!$('warning').hidden)$('warning').textContent='该用户有基础档案，但还没有保存过建议或正式方案。';
+    }
+    async function loadUsers(){const d=await json('/api/debug/user-data/users');$('userSelect').innerHTML=d.users.map(u=>`<option value="${esc(u.userId)}">${esc(u.userId)} · 档案v${u.profileVersion} · 建议${u.adviceCount} · 方案${u.planCount}</option>`).join('');if(!selectedUserId&&d.users[0])selectedUserId=d.users[0].userId;$('userSelect').value=selectedUserId||''}
+    async function loadSelected(){if(!selectedUserId)return;render(await json('/api/debug/user-data/snapshot?userId='+encodeURIComponent(selectedUserId)))}
+    $('userSelect').addEventListener('change',e=>{selectedUserId=e.target.value;loadSelected()});$('refreshButton').addEventListener('click',async()=>{await loadUsers();await loadSelected()});$('currentButton').addEventListener('click',async()=>{const d=localStorage.getItem('dietSecretary.home.deviceId');if(!d)throw new Error('当前浏览器还没有主页测试身份');const s=await json('/api/debug/user-data/snapshot?deviceId='+encodeURIComponent(d));selectedUserId=s.userId;await loadUsers();render(s)});
+    (async()=>{await loadUsers();const d=requestedDeviceId||localStorage.getItem('dietSecretary.home.deviceId');if(d){const s=await json('/api/debug/user-data/snapshot?deviceId='+encodeURIComponent(d));selectedUserId=s.userId;await loadUsers();render(s)}else await loadSelected()})().catch(err=>{$('warning').hidden=false;$('warning').textContent=err.message});
+  </script>
+</body>
+</html>

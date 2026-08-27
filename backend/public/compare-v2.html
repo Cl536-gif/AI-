@@ -270,6 +270,18 @@ let langgraphTurns = []; // [{ role, text }]
 // 之后才返回"的过期请求，避免这类请求的回调把内容写回已经清空的状态里。
 let conversationEpoch = 0;
 const LANGGRAPH_REPLY_GAP_MS = 2500;
+const DEVICE_ID_STORAGE_KEY = 'dietSecretary.deviceId';
+
+function getOrCreateDeviceId() {
+  let deviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+  }
+  return deviceId;
+}
+
+const langgraphDeviceId = getOrCreateDeviceId();
 
 let currentModalArchiveId = null;
 
@@ -360,7 +372,7 @@ async function askLanggraph(message, epoch) {
   renderLanggraphLog();
 
   try {
-    const body = { message };
+    const body = { message, deviceId: langgraphDeviceId };
     if (langgraphThreadId) body.threadId = langgraphThreadId;
 
     const res = await fetch('/api/chat-langgraph', {
