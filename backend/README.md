@@ -132,7 +132,7 @@ npm start
 
 `retrieved` 字段把两个知识库各自检索到的片段和打分都带回来了，方便直接判断"本地知识库这次到底命中了什么"，不用再单独跑 `local-kb-tool` 的 `npm run query` 去核对。
 
-**部署依赖**：这条链路直接 `require` 引用 `local-kb-tool/src/query.js`（跨项目共用同一份检索逻辑，没有复制粘贴）。正式 CloudBase 构建使用仓库根目录作为构建上下文，由根目录 `Dockerfile` 只复制检索所需的五个运行时模块和 `diet`/`body-composition` 两个预构建索引；不会复制原始 `.docx`、评测报告或 `local-kb-tool/node_modules`。`vectra` 和 `@xenova/transformers` 作为后端运行依赖安装在 `/app/node_modules`，满足 Node 的父目录模块解析规则。
+**部署依赖**：这条链路直接 `require` 引用 `local-kb-tool/src/query.js`（跨项目共用同一份检索逻辑，没有复制粘贴）。正式 CloudBase 构建使用仓库根目录作为构建上下文，由根目录 `Dockerfile` 只复制检索所需的五个运行时模块和 `diet`/`body-composition` 两个预构建索引；不会复制原始 `.docx`、评测报告或 `local-kb-tool/node_modules`。`vectra` 和 `@xenova/transformers` 作为后端运行依赖安装在 `/app/node_modules`，满足 Node 的父目录模块解析规则；镜像保留 `/app/backend/src` 的目录层级，以保证对 `local-kb-tool` 的相对路径引用正确。
 
 本地重建索引仍可在 `local-kb-tool` 目录执行 `npm run build-index -- --kb diet` 和 `--kb body-composition`；某个知识库索引不存在时，这条链路不会报错崩溃，只是该知识库的 `chunks` 为空、`error` 字段会说明原因。
 

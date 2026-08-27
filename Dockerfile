@@ -7,8 +7,11 @@ WORKDIR /app
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY backend/src ./src
-COPY backend/public ./public
+# Preserve the repository's backend/ directory level. Several backend modules
+# resolve ../../../local-kb-tool relative to backend/src/services; flattening
+# backend/src to /app/src would incorrectly resolve that path to /local-kb-tool.
+COPY backend/src ./backend/src
+COPY backend/public ./backend/public
 
 # local-kb-tool is included as a minimal runtime bundle. The query path needs
 # these five modules and the two prebuilt Vectra indexes; source documents,
@@ -23,6 +26,8 @@ COPY local-kb-tool/data/index/body-composition/index.json ./local-kb-tool/data/i
 
 ENV NODE_ENV=production
 ENV PORT=3001
+
+WORKDIR /app/backend
 
 EXPOSE 3001
 
