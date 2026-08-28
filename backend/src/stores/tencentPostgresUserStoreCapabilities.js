@@ -1,6 +1,6 @@
 const { USER_STORE_METHODS } = require('./userStoreContract');
 
-const DATABASE_READY_METHODS = Object.freeze([
+const IMPLEMENTED_AND_VERIFIED_METHODS = Object.freeze([
   'ensureUser',
   'resolveAnonymousIdentity',
   'mergeAnonymousIntoAccount',
@@ -40,13 +40,21 @@ const DATABASE_READY_METHODS = Object.freeze([
   'getLatestConsent',
 ]);
 
+// Backward-compatible implementation inventory used by TencentPostgresUserStore.
+// The 37 methods above were promoted only after the 005m evidence matrix and all
+// referenced acceptance manifests passed the final go/no-go integrity audit.
+const DATABASE_READY_METHODS = IMPLEMENTED_AND_VERIFIED_METHODS;
+
 const SCHEMA_REQUIRED_METHODS = Object.freeze([
 ]);
 
 const CONTRACT_CHANGE_REQUIRED_METHODS = Object.freeze([]);
 
 const METHOD_CAPABILITIES = Object.freeze(Object.fromEntries([
-  ...DATABASE_READY_METHODS.map((methodName) => [methodName, 'database_ready']),
+  ...IMPLEMENTED_AND_VERIFIED_METHODS.map((methodName) => [
+    methodName,
+    'implemented_and_verified',
+  ]),
   ...SCHEMA_REQUIRED_METHODS.map((methodName) => [methodName, 'schema_required']),
   ...CONTRACT_CHANGE_REQUIRED_METHODS.map((methodName) => [methodName, 'contract_change_required']),
 ]));
@@ -81,6 +89,7 @@ function isTencentPostgresCutoverReady() {
 }
 
 module.exports = {
+  IMPLEMENTED_AND_VERIFIED_METHODS,
   DATABASE_READY_METHODS,
   SCHEMA_REQUIRED_METHODS,
   CONTRACT_CHANGE_REQUIRED_METHODS,

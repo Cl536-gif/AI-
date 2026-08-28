@@ -18,6 +18,9 @@ const {
   FULL_CUTOVER_MODE,
   assertTencentPostgresCutoverAllowed,
 } = require('./src/stores/tencentPostgresCutoverGate');
+const {
+  isTencentPostgresCutoverReady,
+} = require('./src/stores/tencentPostgresUserStoreCapabilities');
 
 const matrixPath = path.join(__dirname, 'sql/postgres/005m_method_evidence_matrix.review.csv');
 const rows = fs.readFileSync(matrixPath, 'utf8').trim().split('\n').slice(1).map((line) => {
@@ -71,10 +74,38 @@ const completeEnv = {
   TENCENT_PG_005M_POOL_WAITING_MAX: '0',
 };
 
+const fullCutoverEnv = {
+  ...completeEnv,
+  TENCENT_PG_CUTOVER_MODE: FULL_CUTOVER_MODE,
+  TENCENT_PG_CUTOVER_CONFIRM: FULL_CUTOVER_CONFIRMATION,
+  RUN_005I_CAPACITY_REVIEW: 'CONFIRMED_005I_FULL_CAPACITY_REVIEW',
+  TENCENT_PG_FULL_MAX_INSTANCES: '2',
+  TENCENT_PG_POOL_MAX: '1',
+  TENCENT_PG_OBSERVED_MAX_INSTANCES: '2',
+  TENCENT_PG_OBSERVED_POOL_MAX: '1',
+  TENCENT_PG_DATABASE_MAX_CONNECTIONS: '2048',
+  TENCENT_PG_OPERATIONAL_RESERVE_CONNECTIONS: '128',
+  TENCENT_PG_FULL_CONNECTION_BUDGET: '16',
+  RUN_005I_ROLLBACK_POLICY: 'CONFIRMED_005I_AUTOMATIC_ROLLBACK_SIGNALS',
+  TENCENT_PG_ROLLBACK_MIN_SAMPLES: '100',
+  TENCENT_PG_ROLLBACK_POOL_SATURATION_PCT: '90',
+  TENCENT_PG_ROLLBACK_WAITING_CLIENTS: '2',
+  TENCENT_PG_ROLLBACK_READINESS_FAILURES: '3',
+  TENCENT_PG_ROLLBACK_CONNECTION_TIMEOUT_RATE_PCT: '5',
+  TENCENT_PG_ROLLBACK_TRANSACTION_FAILURE_RATE_PCT: '5',
+  TENCENT_PG_ROLLBACK_HTTP_SIDE_EFFECT_FAILURE_RATE_PCT: '5',
+  TENCENT_PG_ROLLBACK_IDENTITY_FAILURE_RATE_PCT: '5',
+};
+
 const go = assertFinalPostgresGoNoGoAllowed({ env: completeEnv });
 assert.strictEqual(go.decision, 'GO');
 assert.strictEqual(go.observationMinutes, 60);
 assert.strictEqual(go.requestCount, 100);
+assert.strictEqual(isTencentPostgresCutoverReady(), true);
+const fullCutover = assertTencentPostgresCutoverAllowed({ env: fullCutoverEnv });
+assert.strictEqual(fullCutover.allowed, true);
+assert.strictEqual(fullCutover.capacity.applicationConnectionLimit, 2);
+assert.strictEqual(fullCutover.capacity.applicationConnectionBudget, 16);
 
 assert.throws(
   () => assertFinalPostgresGoNoGoAllowed({ env: {} }),
@@ -110,6 +141,8 @@ console.log(JSON.stringify({
   methodEvidenceCount: rows.length,
   evidencePackageCount: finalEvidencePackages.length,
   acceptanceIntegrityVerified: true,
+  runtimeCapabilityReady: true,
+  runtimeFullCutoverAllowed: true,
   fullCutoverFailsClosedWithoutFinalEvidence: true,
   blockerCount: 0,
   blockers: [],

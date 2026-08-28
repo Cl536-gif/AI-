@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { USER_STORE_METHODS } = require('./src/stores/userStoreContract');
 const {
+  IMPLEMENTED_AND_VERIFIED_METHODS,
   DATABASE_READY_METHODS,
   assertCompleteCapabilityInventory,
   isTencentPostgresCutoverReady,
@@ -30,9 +31,10 @@ const auditSource = fs.readFileSync(
 const inventory = assertCompleteCapabilityInventory();
 assert.strictEqual(USER_STORE_METHODS.length, 37);
 assert.strictEqual(DATABASE_READY_METHODS.length, 37);
+assert.strictEqual(IMPLEMENTED_AND_VERIFIED_METHODS.length, 37);
 assert.strictEqual(inventory.length, 37);
-assert(inventory.every(({ status }) => status === 'database_ready'));
-assert.strictEqual(isTencentPostgresCutoverReady(), false);
+assert(inventory.every(({ status }) => status === 'implemented_and_verified'));
+assert.strictEqual(isTencentPostgresCutoverReady(), true);
 assert.throws(
   () => assertTencentPostgresCutoverAllowed({
     env: {
@@ -40,7 +42,7 @@ assert.throws(
       TENCENT_PG_CUTOVER_CONFIRM: FULL_CUTOVER_CONFIRMATION,
     },
   }),
-  (error) => error?.code === 'POSTGRES_FULL_CUTOVER_NOT_READY'
+  (error) => error?.code === 'POSTGRES_FINAL_REVIEW_REQUIRED'
 );
 
 const defaultCheckpointerPolicy = resolveLangGraphCheckpointerPolicy({ env: {} });
@@ -79,11 +81,11 @@ console.log(JSON.stringify({
   batch: '005d-full-cutover-readiness-audit',
   status: 'PASS',
   contractMethodCount: USER_STORE_METHODS.length,
-  databaseReadyMethodCount: DATABASE_READY_METHODS.length,
-  fullCutoverReady: false,
-  blockerCount: expectedBlockers.length,
-  processLocalCheckpointerDetected: true,
+  implementedAndVerifiedMethodCount: IMPLEMENTED_AND_VERIFIED_METHODS.length,
+  fullCutoverReady: true,
+  historicalBlockerCount: expectedBlockers.length,
+  historicalProcessLocalCheckpointerDetected: true,
   fullCapacityGateCandidatePresent: true,
   finalGoNoGoGateCandidatePresent: true,
-  fullCapacityCloudEvidenceMissing: true,
+  historicalFullCapacityCloudEvidenceMissing: true,
 }));
