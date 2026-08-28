@@ -1,4 +1,5 @@
 const fs = require('fs');
+const assert = require('assert');
 const net = require('net');
 const os = require('os');
 const path = require('path');
@@ -35,12 +36,34 @@ async function startIsolatedPostgres({ checkpointSchema = 'wecom_test_checkpoint
   const connectionString = `postgresql://postgres@127.0.0.1:${port}/postgres`;
   const pool = new Pool({ connectionString, max: 12 });
   await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
-  await pool.query('CREATE SCHEMA IF NOT EXISTS app');
+  await pool.query(`
+    CREATE ROLE diet_owner NOLOGIN;
+    CREATE ROLE diet_app NOLOGIN;
+    CREATE SCHEMA IF NOT EXISTS app AUTHORIZATION diet_owner;
+  `);
   const migration = fs.readFileSync(
     path.resolve(__dirname, '../../sql/postgres/006a_wecom_async_channel.review.sql'),
     'utf8'
   );
   await pool.query(migration);
+  const privilegeCheck = await pool.query(`
+    WITH expected(table_name) AS (
+      VALUES
+        ('wecom_identities'), ('wecom_onboarding'), ('wecom_deletion_requests'),
+        ('wecom_inbound_jobs'), ('wecom_graph_receipts'), ('wecom_outbound_messages')
+    )
+    SELECT
+      count(*) FILTER (WHERE has_table_privilege(
+        'diet_app', 'app.' || table_name, 'SELECT,INSERT,UPDATE'
+      ))::integer AS table_count,
+      has_sequence_privilege(
+        'diet_app', 'app.wecom_inbound_jobs_sequence_id_seq', 'USAGE,SELECT'
+      ) AS sequence_access
+    FROM expected
+    GROUP BY sequence_access
+  `);
+  assert.strictEqual(privilegeCheck.rows[0]?.table_count, 6);
+  assert.strictEqual(privilegeCheck.rows[0]?.sequence_access, true);
   await pool.query(`
     CREATE TABLE app.wecom_test_crash_signals (
       scenario text PRIMARY KEY,

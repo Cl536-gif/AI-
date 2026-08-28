@@ -1,5 +1,10 @@
 BEGIN;
 
+-- 所有对象固定归 diet_owner 所有；CloudBase Run 只使用最小权限账号
+-- diet_app 读写队列。DMS 管理员执行本迁移时不能把对象留在管理员名下
+-- 且忘记授权，否则真实回调会在首次 INSERT 时失败。
+SET LOCAL ROLE diet_owner;
+
 CREATE TABLE IF NOT EXISTS app.wecom_identities (
   external_subject_hash text PRIMARY KEY CHECK (external_subject_hash ~ '^[a-f0-9]{64}$'),
   user_id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -82,6 +87,13 @@ CREATE TABLE IF NOT EXISTS app.wecom_outbound_messages (
 
 REVOKE ALL ON app.wecom_identities, app.wecom_onboarding,
   app.wecom_deletion_requests, app.wecom_inbound_jobs,
-  app.wecom_graph_receipts, app.wecom_outbound_messages FROM PUBLIC;
+  app.wecom_graph_receipts, app.wecom_outbound_messages FROM PUBLIC, diet_app;
+
+GRANT SELECT, INSERT, UPDATE ON app.wecom_identities, app.wecom_onboarding,
+  app.wecom_deletion_requests, app.wecom_inbound_jobs,
+  app.wecom_graph_receipts, app.wecom_outbound_messages TO diet_app;
+
+REVOKE ALL ON SEQUENCE app.wecom_inbound_jobs_sequence_id_seq FROM PUBLIC, diet_app;
+GRANT USAGE, SELECT ON SEQUENCE app.wecom_inbound_jobs_sequence_id_seq TO diet_app;
 
 COMMIT;
