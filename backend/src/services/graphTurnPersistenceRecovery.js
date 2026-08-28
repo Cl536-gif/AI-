@@ -12,6 +12,58 @@ function normalizeOperationId(value) {
   return operationId;
 }
 
+function normalizeExternalTurn(value) {
+  if (!value) return null;
+  const channel = String(value.channel || '').trim();
+  const requestId = String(value.requestId || '').trim();
+  const inputSha256 = String(value.inputSha256 || '').trim().toLowerCase();
+  const operationId = normalizeOperationId(value.operationId);
+  if (channel !== 'wecom' || !/^[0-9a-f-]{36}$/.test(requestId) ||
+      !/^[a-f0-9]{64}$/.test(inputSha256)) {
+    throw createRecoveryError('GRAPH_EXTERNAL_TURN_INVALID');
+  }
+  return Object.freeze({ channel, requestId, inputSha256, operationId });
+}
+
+function externalTurnMatches(request, externalTurn) {
+  const expected = normalizeExternalTurn(externalTurn);
+  if (!expected || !request) return false;
+  return request.channel === expected.channel &&
+    request.requestId === expected.requestId &&
+    request.inputSha256 === expected.inputSha256 &&
+    request.operationId === expected.operationId;
+}
+
+function classifyExternalTurnSnapshot(snapshot, externalTurn) {
+  const expected = normalizeExternalTurn(externalTurn);
+  const state = snapshot?.values || null;
+  if (!state || !state.externalTurnRequest) {
+    return Object.freeze({ status: 'absent', state, snapshot });
+  }
+  if (!externalTurnMatches(state.externalTurnRequest, expected)) {
+    return Object.freeze({ status: 'conflict', state, snapshot });
+  }
+  const operationId = expected.operationId;
+  if (state.externalTurnReceipt?.requestId === expected.requestId &&
+      state.externalTurnReceipt?.inputSha256 === expected.inputSha256 &&
+      state.externalTurnReceipt?.operationId === operationId &&
+      state.persistenceReceipt?.operationId === operationId) {
+    return Object.freeze({ status: 'complete', state, snapshot });
+  }
+  if ((Array.isArray(snapshot?.next) && snapshot.next.length > 0) ||
+      (Array.isArray(snapshot?.tasks) && snapshot.tasks.some((task) => !task?.result))) {
+    return Object.freeze({ status: 'checkpoint_incomplete', state, snapshot });
+  }
+  if (state.persistenceRequest?.operationId === operationId &&
+      state.persistenceReceipt?.operationId !== operationId) {
+    return Object.freeze({ status: 'persistence_pending', state, snapshot });
+  }
+  if (state.persistenceReceipt?.operationId === operationId) {
+    return Object.freeze({ status: 'receipt_pending', state, snapshot });
+  }
+  return Object.freeze({ status: 'conflict', state, snapshot });
+}
+
 function lastHumanMessage(state) {
   const messages = Array.isArray(state?.messages) ? state.messages : [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -87,8 +139,11 @@ async function persistAndAcknowledgeGraphTurn({
 }
 
 module.exports = {
+  classifyExternalTurnSnapshot,
+  externalTurnMatches,
   isRetryOfRecoveredTurn,
   lastHumanMessage,
+  normalizeExternalTurn,
   persistAndAcknowledgeGraphTurn,
   recoverPendingGraphTurn,
 };

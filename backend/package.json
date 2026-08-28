@@ -15,7 +15,10 @@
     "test:003c": "node manual-test-postgres-readiness-lifecycle.js",
     "test:003d": "node manual-test-postgres-003d.js",
     "test:003": "npm run test:003a && npm run test:003b && npm run test:003c && npm run test:003d",
-    "verify:003d:cloud": "node manual-test-postgres-cloud-verification.js"
+    "verify:003d:cloud": "node manual-test-postgres-cloud-verification.js",
+    "test:wecom:virtual": "node manual-test-wecom-channel-virtual.js",
+    "test:wecom:crash-recovery": "node tests/wecom/crash-recovery.js",
+    "test:wecom:regression": "node tests/wecom/regression.js"
   },
   "dependencies": {
     "@langchain/core": "^1.2.3",

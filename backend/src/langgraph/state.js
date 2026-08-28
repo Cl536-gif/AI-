@@ -59,6 +59,21 @@ const DietState = Annotation.Root({
     default: () => null,
   }),
 
+  // 外部渠道的一次确定性轮次。企业微信异步 Worker 会把数据库任务的
+  // 固定 request_id/input_sha256/graph_operation_id 写进这里；崩溃恢复
+  // 只接受三个字段完全一致的 checkpoint，不能仅凭消息正文相同重跑。
+  externalTurnRequest: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
+  // 图结果、业务副作用和用户可见回复都完成后的确定性回执。渠道任务表
+  // 尚未来得及更新时，Worker 可据此重建 Outbox，而不再次调用模型。
+  externalTurnReceipt: Annotation({
+    reducer: (_left, right) => right,
+    default: () => null,
+  }),
+
   // 暂停计划后用户明确选择“按现在情况重做”时进入的专用对话状态。
   // 只负责收集持续变化并让用户确认清单；确认完成前不会创建新版草稿。
   pendingPlanRevision: Annotation({
