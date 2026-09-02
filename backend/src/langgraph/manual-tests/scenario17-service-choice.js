@@ -3,7 +3,8 @@
 // 六项信息采集完毕、generatePlan出方案之前，必须先问清楚"免费问答 还是
 // 开通付费定期推送服务"，覆盖三个场景：
 //   1. 用户选免费
-//   2. 用户选订阅，并设定推送时间
+//   2. 用户选订阅 → 先确认生理性别（equation_sex 门禁：长期规划只面向
+//      在校女生）→ 再设定推送时间 → 出方案
 //   3. 用户含糊回答两次，触发"默认按免费处理"的兜底
 //
 // 运行前先在另一个终端起服务：
@@ -80,16 +81,24 @@ async function scenarioFree() {
 }
 
 async function scenarioSubscribe() {
-  console.log('\n\n########## 场景2：用户选订阅并设定时间 ##########');
+  console.log('\n\n########## 场景2：用户选订阅 → 确认生理性别 → 设定时间 ##########');
   const { threadId, data: completionData } = await runToCompletion();
   console.log('>>> 六项采集完成，服务边界话术:', completionData.reply);
 
   let data = await sendTurn(threadId, '我想开通推送服务');
   printTurn('用户回复"我想开通推送服务"：', data);
   console.log(
-    data.serviceTier === null
+    data.serviceTier === null && /生理性别/.test(data.reply)
+      ? '✅ 正确转入equation_sex阶段确认生理性别（长期规划只面向在校女生），serviceTier还没定'
+      : `❌ 预期进入equation_sex且serviceTier仍为null，实际 serviceTier=${data.serviceTier}, reply含"生理性别"=${/生理性别/.test(data.reply)}`
+  );
+
+  data = await sendTurn(threadId, '生理女性');
+  printTurn('用户回复"生理女性"：', data);
+  console.log(
+    data.serviceTier === null && /每天、隔天|再告诉我大概几点就行/.test(data.reply)
       ? '✅ 正确转入schedule阶段追问推送时间，serviceTier还没定'
-      : `❌ 预期serviceTier仍为null（还在等设定时间），实际 serviceTier=${data.serviceTier}`
+      : `❌ 预期进入schedule追问时间，实际 serviceTier=${data.serviceTier}, reply含时间问询指纹=${/每天、隔天|再告诉我大概几点就行/.test(data.reply)}`
   );
 
   data = await sendTurn(threadId, '每天晚上7点提醒我就行');
