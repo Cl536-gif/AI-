@@ -41,6 +41,31 @@ function formatNumber(value) {
 function parseRequestedLossRate(userText, { assumeGoalIntent = false } = {}) {
   const text = String(userText || '').replace(/\s+/g, '');
   if (!text || PAST_LOSS_REGEX.test(text)) return null;
+
+  // 单位速率声明（手术 G1′）：用户直接说「每(周|星期)想减 X 斤/公斤」，
+  // 没有「时长数字 + 总量」结构（如「一个月 20 斤」），旧解析缺 durationMatch
+  // 直接返回 null 导致漏拦。意图助词（想/要/打算…）必现，避免「过去每周减X斤」
+  // 式纯陈述被误拦（blocking:true 误拦代价高于漏拦命令式表达）。
+  // 【位置铁律】本块必须在 EXPLICIT_LOSS_INTENT_REGEX 提前返回之前：该词表不含
+  // 裸「减」（只认 减重/减肥/瘦/减掉/掉秤），「我每周想减3斤」的「减3斤」匹配
+  // 不上，放在其后则本分支永远不可达（刀1e 阶段2 S2 判挂根因，勿回退）。
+  const weeklyRateMatch = text.match(
+    new RegExp(`每(周|星期)(?:想|要|打算|希望|能|可以|会|争取)(?:减|瘦|减掉|减肥|减重|掉秤)(?:到)?(${NUMBER_TOKEN})(斤|公斤|千克|kg)`, 'u')
+  );
+  if (weeklyRateMatch) {
+    const weeklyRateValue = parseChineseNumber(weeklyRateMatch[2]);
+    const weeklyRateKg = toKilograms(weeklyRateValue, weeklyRateMatch[3]);
+    if (weeklyRateValue && weeklyRateKg) {
+      return {
+        weeks: 1,
+        lossKg: weeklyRateKg,
+        kgPerWeek: weeklyRateKg,
+        durationText: `每${weeklyRateMatch[1]}`,
+        lossText: `${weeklyRateMatch[2]}${weeklyRateMatch[3]}`,
+      };
+    }
+  }
+
   if (!assumeGoalIntent && !EXPLICIT_LOSS_INTENT_REGEX.test(text)) return null;
 
   const durationMatch = text.match(new RegExp(`(${NUMBER_TOKEN})(?:个)?(天|周|星期|个月|月)`, 'u'));
@@ -98,6 +123,19 @@ function calculateBmi(bodyProfile = {}) {
   return weightKg / ((heightCm / 100) ** 2);
 }
 
+function parseDeclaredBmi(text) {
+  const match = String(text || '').match(/(?:BMI|身体质量指数|体质指数)\s*[=:：]?\s*(\d+(?:\.\d+)?)/iu);
+  return match ? Number(match[1]) : null;
+}
+
+function buildDeclaredBmiFloorResponse(declaredBmi) {
+  return (
+    `你提到的BMI是${formatNumber(declaredBmi)}，已经低于18.5。想继续变轻的心情我理解，` +
+    '但我不能配合继续减重，也不会生成减重方案；接下来应以维持健康、恢复稳定饮食为主。' +
+    '如果你仍担心体型或体重，建议先和医生或注册营养师确认。'
+  );
+}
+
 function buildSpeedRedlineResponse(rate, hasProfile) {
   return (
     '想快点看到变化，这个心情我理解。健康减重通常以每周约0.5～1公斤作为平均参照；' +
@@ -145,6 +183,14 @@ function detectWeightSafetyResponse({ userText, goalText, bodyProfile = {}, assu
   const bmi = calculateBmi(bodyProfile);
   if (hasLossIntent && bmi !== null && bmi < 18.5) {
     return { type: 'bmi_floor', text: buildBmiFloorResponse(bodyProfile, bmi), blocking: true };
+  }
+
+  // 直接声明 BMI 兜底（手术 G2）：无档案（bmi===null）时解析用户自由文本里
+  // 直接写出的 BMI 数值（「我 BMI 17.5 想减肥」）——calculateBmi 只认已入档的
+  // 身高体重，看不到这句话。文案不引用档案数字，与 buildBmiFloorResponse 区分。
+  const declaredBmi = bmi === null ? parseDeclaredBmi(text) : null;
+  if (hasLossIntent && declaredBmi !== null && declaredBmi < 18.5) {
+    return { type: 'bmi_floor_declared', text: buildDeclaredBmiFloorResponse(declaredBmi), blocking: true };
   }
 
   const rate = parseRequestedLossRate(text, { assumeGoalIntent });
