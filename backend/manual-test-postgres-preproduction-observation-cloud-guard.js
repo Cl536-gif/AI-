@@ -88,11 +88,11 @@ expectCode({ ...validEnv, TENCENT_PG_POOL_MAX: '1' }, 'observe',
   'POSTGRES_HTTP_CANARY_SCOPE_INVALID');
 expectCode({ ...validEnv, BAILIAN_API_KEY: '' }, 'observe', 'BAILIAN_CREDENTIALS_REQUIRED');
 
-const routeSource = fs.readFileSync(
-  path.join(__dirname, 'src/routes/chatLanggraph.js'),
+const conversationSource = fs.readFileSync(
+  path.join(__dirname, 'src/services/langgraphConversationService.js'),
   'utf8'
 );
-assert(routeSource.includes('canaryPoolWaiting: getPostgresPool().waitingCount'));
+assert(conversationSource.includes('canaryPoolWaiting: getPostgresPool().waitingCount'));
 
 const postgresDir = path.join(__dirname, 'sql', 'postgres');
 const preflight = fs.readFileSync(

@@ -44,6 +44,40 @@ const CAFETERIA_MODE_QUESTION =
   '如果是窗口已经配好的套餐，我会告诉你拿到套餐后怎么取舍和替换。你们食堂更接近哪一种呀？';
 
 const PRODUCT_INFO_QUESTION_REGEX = /(付费|收费|免费|花钱|多少钱|价格|价钱)/;
+// fix4c-2：收费质疑（"免费你凭什么收钱""为什么收费"）与纯问价分流——
+// 质疑走模型第51条三段式对比话术，纯问价才走固定价格回答
+const PRICE_CHALLENGE_REGEX =
+  /(凭什么|为什么(?:收|要收|还要收)|(?:免费|不要钱|不花钱)[^。！？\n]{0,10}(?:凭什么|为什么|还|却|竟)|收(?:什么|我们的|这个)钱)/;
+// fix4c-2：反驳/追问识别（"豆包也有记忆啊""但是…"）——宽正则+安全行为
+// （先回应再采集，回应本身是好行为，误伤代价低），不得被采集漏斗吞掉
+const COUNTER_ARGUMENT_REGEX = /(也有|还是有|但是|可是|那又|不过|就算|照样|难道|还不是)/;
+// 点名即拦截：名单命中 100% 确定性走三段式（名单可后续追加，但不是防漏的主力）
+const NAMED_AI_REGEX = /(豆包|DeepSeek|ChatGPT|GPT|文心|Kimi|通义|Gemini|Claude|讯飞|星火|智谱|GLM|Copilot|Siri|小爱)/;
+// 对比主语：任何 AI 类实体或指代。认“实体感”不认“具体名字”
+const AI_ENTITY_REGEX = /(AI|助手|机器人|大模型|软件|App|应用|工具|程序|它|它们|别人|人家|其他|别的|另外|那款|那个)/;
+// 弹药一：免费（价格类表述，与 PRICE_CHALLENGE_REGEX 职责相邻，兜住价格正则未覆盖的免费攻击）
+const COMPARISON_FREE_REGEX = /(免费|不要钱|不收钱|白嫖|凭什么(?:收钱|收费|要钱)|为啥(?:收钱|收费|要钱)|值得(?:买|付费|花这个钱))/;
+// 弹药二：记忆（必须与对比主语共现，防止“我不记得昨天吃了什么”被误伤）
+const MEMORY_ATTACK_REGEX = new RegExp(
+  AI_ENTITY_REGEX.source + '[^。！？\\n]{0,15}(?:也有记忆|有记忆|能记住|记得住|记住了|记着|能回忆|有记忆功能)' +
+  '|(?:也有记忆|能记住|记得住|有记忆功能)[^。！？\\n]{0,10}(?:AI|助手|机器人|大模型|软件|App|它|它们)'
+);
+// 弹药三：能力（同样必须与对比主语共现）
+const ABILITY_ATTACK_REGEX = new RegExp(
+  AI_ENTITY_REGEX.source + '[^。！？\\n]{0,15}(?:也能|同样能|更聪明|更强|更好|比(?:你|它)强|都能|一样能|还会|替代|取代|淘汰|没用了|用不上)' +
+  '|(?:也能|同样能|更聪明|更强|更好)[^。！？\\n]{0,10}(?:AI|助手|机器人|大模型|软件|App|它|它们)'
+);
+const COMPARISON_CHALLENGE_REGEX = new RegExp(
+  COMPARISON_FREE_REGEX.source + '|' + MEMORY_ATTACK_REGEX.source + '|' + ABILITY_ATTACK_REGEX.source
+);
+const MEMORY_COUNTER_REGEX = MEMORY_ATTACK_REGEX;
+// 宽松版：与确定性正则“严+宽”互补，专捞未知名字的边角对比表达
+const UNKNOWN_AI_COMPARISON_REGEX =
+  /(AI|助手|机器人|大模型|软件|App|应用|工具|它|它们|别人|人家|别的|那个)[^。！？\n]{0,25}(也能|同样能|能做到|免费|有记忆|能记住|记得|比(?:你|它)强|替代|凭什么)/;
+// fix4c：带具体场景的食物诉求（如"今晚想吃火锅"）——不得被采集漏斗吞成确认句
+const SCENARIO_FOOD_CRAVING_REGEX = /想吃|想喝|馋|去吃|吃顿|来顿|炫|干饭|火锅|烧烤|炸鸡|奶茶|麻辣烫|烤肉|螺蛳粉|蛋糕|甜品|炸串|关东煮/;
+// fix4c：非体重健康诉求（如"长痘想调理"）——接住诉求，不硬拉回减重采集
+const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胀气|口气|溃疡/;
 const REMINDER_QUESTION_REGEX = /(提醒|推送|定时|通知).*(吗|嘛|么|能不能|可以)|能不能.*(提醒|推送)|可以.*(提醒|推送)/;
 const SERVICE_OPTION_QUESTION_REGEX = /(有哪些|什么).*(选择|选项|模式|功能)|怎么选|两种方式|服务区别/;
 const CAPABILITY_QUESTION_REGEX = /(你能帮我什么|能帮我什么|你可以帮我什么|你能帮到我什么|能帮到我什么|你会做什么|你有什么用|能做什么)/;
@@ -51,6 +85,7 @@ const MALE_SELF_DISCLOSURE_REGEX = /(?:(?:我是|本人是|我算是|性别(?:�
 const WEARABLE_CALORIE_QUESTION_REGEX = /(手表[^。！？]*(等量|补回|什么意思|为什么)|不[^。！？]*按[^。！？]*手表[^。！？]*(等量|补回)|等量补回[^。！？]*(什么意思|为什么))/;
 const GENERAL_QUESTION_REGEX = /[？?]|(吗|嘛|么|为什么|怎么|如何|能不能|可不可以|有没有)[。！!～~]?$/;
 const GOAL_QUESTION_REGEX = /(整体感受|整体状态|整体达到|身材目标|想达到|想改善|希望达到|最想改善|达到什么样)[^。！？\n]*[？?]/;
+const PURE_GREETING_REGEX = /^(?:你好|您好|嗨|哈喽|hello|hi|在吗|在么|早上好|中午好|晚上好|大家好)[～~!！。，,\s]*$/i;
 
 const FIRST_TURN_INTRO =
   '你好～我是你的私人健康饮食管理秘书，会先了解你的真实饮食习惯，再陪你一点点找到更适合自己的吃法。';
@@ -72,8 +107,94 @@ const FALLBACK_SLOT_QUESTIONS = {
   cafeteriaMode: CAFETERIA_MODE_QUESTION,
 };
 
-function buildFallbackSlotQuestion(slotKey) {
-  return FALLBACK_SLOT_QUESTIONS[slotKey] || `关于“${SLOT_LABELS[slotKey]}”，方便再补充一点具体情况吗？`;
+// 百炼偶尔会把承接语的冒号单独留在回复开头（例如
+// “：需要避开羊肉～……”）。这种标点没有任何语义，也不是前端渲染
+// 产生的；在写入对话历史前确定性清掉，避免异常文本继续污染后续轮次。
+function stripOrphanLeadingColon(text) {
+  return String(text || '').replace(/^[\s\uFEFF]*[：:]+\s*/u, '').trimStart();
+}
+
+function buildFallbackSlotQuestion(slotKey, userText = '') {
+  const question = FALLBACK_SLOT_QUESTIONS[slotKey] || `关于“${SLOT_LABELS[slotKey]}”，方便再补充一点具体情况吗？`;
+  if (isComparisonChallenge(userText)) {
+    return `${buildComparisonAnswerForText(userText)}\n${question}`;
+  }
+  return question;
+}
+
+const RESTRICTION_REACTION_REGEX =
+  /(拉肚子|腹泻|腹胀|起疹子|长痘|反胃|恶心|不舒服|不耐受|过敏)/u;
+const RESTRICTION_DECLARATION_REGEX =
+  /(不能吃|不吃|不碰|不要吃|需要避开|得避开|忌口|过敏|不耐受|吃了|一吃|喝了|一喝|素食|花生|芝士|奶酪|牛奶|鸡蛋|虾|蟹|贝类|芒果)/u;
+const RESTRICTION_NEGATION_REGEX =
+  /(没有忌口|无忌口|没有过敏|无过敏|没有不吃|什么都能吃|都不(?:吃|过敏))/u;
+const RESTRICTION_SAFETY_KEYWORD_REGEX =
+  /(花生|芝士|奶酪|牛奶|鸡蛋|虾|蟹|贝类|芒果|忌口|过敏|不耐受|不能吃|不吃|不碰|需要避开|得避开|拉肚子|腹泻|腹胀|起疹子|长痘|反胃|恶心|不舒服)/u;
+
+function getNewRestrictionLabel(userText, restrictionsValue) {
+  const text = String(userText || '').trim();
+  if (!text || !RESTRICTION_DECLARATION_REGEX.test(text)) return null;
+
+  const patterns = [
+    /我对\s*([^，,。！？!?；;\s]{1,12})\s*(?:过敏|不耐受)/u,
+    /([^，,。！？!?；;\s]{1,12}?)\s*(?:吃了|一吃|喝了|一喝)(?:就|会)?(?:拉肚子|腹泻|腹胀|起疹子|长痘|反胃|恶心|不舒服)/u,
+    /(?:不能吃|不吃|不碰|不要吃|需要避开|得避开)\s*([^，,。！？!?；;\s]{1,12})/u,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  if (/素食/u.test(text)) return '素食';
+
+  const stored = String(restrictionsValue || '');
+  if (!stored || !RESTRICTION_REACTION_REGEX.test(text)) return null;
+  const cleaned = stored
+    .replace(/^(?:需要避开|不能吃|不吃|对)/u, '')
+    .replace(/(?:过敏|不耐受|吃了会.*|一吃就.*)$/u, '')
+    .trim();
+  return cleaned || null;
+}
+
+function detectSafetySignalNeedingClarification(userText, restrictionsValue) {
+  const text = String(userText || '').trim();
+  const hasDietTriggerContext = /(吃了|喝了|一吃|一喝|吃后|喝后|吃完|喝完|吃就|喝就|吃(?:了)?会|喝(?:了)?会|每次吃)/.test(text);
+  if (BODY_HEALTH_CONCERN_REGEX.test(text) && !hasDietTriggerContext) return null;
+  if (!text || RESTRICTION_NEGATION_REGEX.test(text)) return null;
+  if (!RESTRICTION_DECLARATION_REGEX.test(text) && !RESTRICTION_REACTION_REGEX.test(text)) return null;
+  if (getNewRestrictionLabel(text, restrictionsValue)) return null;
+
+  const signal = text.match(RESTRICTION_SAFETY_KEYWORD_REGEX)?.[0];
+  return signal || text.slice(0, 12);
+}
+
+function buildSafetyClarificationQuestion(signal) {
+  return `你刚才提到“${signal}”，是吃东西需要避开，还是过敏呀？我不太确定你的意思，先告诉我这一点就好。`;
+}
+
+function hasVisibleRestrictionAcknowledgement(text, label) {
+  const value = String(text || '');
+  if (!value.includes(label)) return false;
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(
+    `(?:记下|记住|收到|明白|了解)[^。！？?\\n]{0,20}${escapedLabel}|` +
+      `${escapedLabel}[^。！？?\\n]{0,16}(?:完全避开|不安排|不碰|不出现|整体排除|按素食)`,
+    'u'
+  ).test(value);
+}
+
+function prependRestrictionAcknowledgement({ replyText, userText, restrictionsValue, messages = [] }) {
+  const label = getNewRestrictionLabel(userText, restrictionsValue);
+  if (!label) return replyText;
+
+  const alreadyAcknowledged = messages
+    .filter((message) => getMessageRole(message) === 'ai')
+    .some((message) => hasVisibleRestrictionAcknowledgement(getMessageText(message), label));
+  if (alreadyAcknowledged || hasVisibleRestrictionAcknowledgement(replyText, label)) return replyText;
+
+  const acknowledgement = label === '素食'
+    ? '先记下：之后按素食安排～'
+    : `先记下：${label}完全避开～`;
+  return `${acknowledgement}${replyText}`;
 }
 
 function normalizeFoodRejectionTransition(text, userText, nextSlot) {
@@ -104,7 +225,45 @@ const WEARABLE_CALORIE_ANSWER =
   '意思是手表显示的消耗只是估算值，比如显示消耗300千卡，并不代表就要额外吃回300千卡。' +
   '我会把这个数字和运动类型、时长、强度及当天饮食一起作为参考，再判断是否需要调整正餐或加餐。';
 
+function buildComparisonChallengeAnswer() {
+  return (
+    '任何一个通用 AI 助手都能给饮食建议，而且免费。但差别在于：它们的记忆是"聊过的谈资"——你提过减脂，它下次顺着聊；' +
+    '你的档案是"开方的处方"——忌口、目标锚点、执行反馈、复盘节点都结构化存着，每条建议都从这份专属档案里长出来。' +
+    '它们有问必答，而我在你已偏低或要求一周减超 1 公斤时，会明确说"这个方案不能出"——负责任的代价，有时候就是得说不。' +
+    '你要的是一次"回答"，还是一位"负责的教练"？'
+  );
+}
+
+function buildMemoryCounterAnswer() {
+  return (
+    '确实，它们也有记忆。但区别在"记得之后干什么"：它们的记忆是续聊用的谈资，你的档案是开方用的处方——' +
+    '忌口、体重曲线、目标锚点、复盘节点都在里面，每一条建议都从这份处方里长出来，而不是顺着话头聊两句。' +
+    '它们的记忆没有周期，我有结构化的复盘节点：该校准的时候，进度条不会丢。'
+  );
+}
+
+function isComparisonChallenge(userText) {
+  const text = String(userText || '');
+  return NAMED_AI_REGEX.test(text) || COMPARISON_CHALLENGE_REGEX.test(text) || PRICE_CHALLENGE_REGEX.test(text);
+}
+
+function isMemoryAttack(userText) {
+  const text = String(userText || '');
+  return MEMORY_ATTACK_REGEX.test(text) || (NAMED_AI_REGEX.test(text) && /(记忆|记得|记住)/.test(text));
+}
+
+function buildComparisonAnswerForText(userText) {
+  return isMemoryAttack(userText)
+    ? buildMemoryCounterAnswer()
+    : buildComparisonChallengeAnswer();
+}
+
 function getFixedProductAnswer(userText) {
+  const comparisonHit = NAMED_AI_REGEX.test(userText) || COMPARISON_CHALLENGE_REGEX.test(userText);
+  if (comparisonHit) {
+    return isMemoryAttack(userText) ? buildMemoryCounterAnswer() : buildComparisonChallengeAnswer();
+  }
+  if (PRICE_CHALLENGE_REGEX.test(userText)) return buildComparisonChallengeAnswer();
   if (WEARABLE_CALORIE_QUESTION_REGEX.test(userText)) return WEARABLE_CALORIE_ANSWER;
   if (MALE_SELF_DISCLOSURE_REGEX.test(userText)) return MALE_SERVICE_BOUNDARY_ANSWER;
   if (CAPABILITY_QUESTION_REGEX.test(userText)) return CAPABILITY_ANSWER;
@@ -235,7 +394,35 @@ const PREMATURE_PLAN_PATTERNS = [
 
 const MAX_COLLECTION_QUESTION_LENGTH = 150;
 
-function detectCollectionVerbosity(text) {
+// 不枚举“最后想问/最后再确认/还差最后一个”等具体句式：模型可以无限
+// 换说法。状态仍缺两项以上时，“最后”本身或“还/只差一个”就已经与
+// 事实冲突，直接按语义核心做确定性判断。
+const FINAL_QUESTION_PROGRESS_REGEX =
+  /最后|(?:还|只)(?:差|剩)(?:下)?[^。！？\n]{0,4}(?:一个|一项)/u;
+
+function getRemainingCollectionSlotKeys(slots = {}) {
+  const remaining = SLOT_KEYS.filter((key) => !slots[key]?.confirmed);
+  const sceneIsCafeteria = slots.scene?.confirmed && String(slots.scene.value || '').includes('食堂');
+  if (sceneIsCafeteria && !slots.cafeteriaMode?.confirmed) remaining.push('cafeteriaMode');
+  return remaining;
+}
+
+// 是否只剩最后一项由状态机判断，不能让模型自行估算。只要实际仍缺两项
+// 或更多，任何“最后一个/还差最后一个”播报都属于确定性矛盾，必须重试；
+// 即使提示词偶尔失守，也不能把错误进度写进对话历史。
+function detectMisleadingCollectionProgress(text, slots = {}) {
+  const remaining = getRemainingCollectionSlotKeys(slots);
+  if (remaining.length <= 1 || !FINAL_QUESTION_PROGRESS_REGEX.test(String(text || ''))) return [];
+  return [{
+    type: 'misleading_collection_progress',
+    detail:
+      `回复声称正在问“最后一个”问题，但状态机显示仍有${remaining.length}项未确认：` +
+      remaining.map((key) => SLOT_LABELS[key]).join('、'),
+  }];
+}
+
+function detectCollectionVerbosity(text, opts = {}) {
+  if (opts.skipVerbosity) return [];
   if (text.trim().length <= MAX_COLLECTION_QUESTION_LENGTH) return [];
   return [{
     type: 'collection_question_too_verbose',
@@ -292,11 +479,12 @@ function detectUnconfirmedSlotAssertions(text, slots = {}) {
 // checkAsksTargetSlot 兜底——不管正则有没有命中，都再问一遍"这段话到底
 // 有没有实质问到目标字段"，这条判断跟具体措辞无关，理论上能覆盖所有
 // 未来可能出现的新规避方式，不用再靠不断新增正则去追。
-async function detectAskNextQuestionViolations(text, slotLabel, slotKey, slots = {}) {
+async function detectAskNextQuestionViolations(text, slotLabel, slotKey, slots = {}, opts = {}) {
   const violations = [
     ...detectPrematurePlan(text),
-    ...detectCollectionVerbosity(text),
+    ...detectCollectionVerbosity(text, opts),
     ...detectUnconfirmedSlotAssertions(text, slots),
+    ...detectMisleadingCollectionProgress(text, slots),
   ];
   const asksTarget = await checkAsksTargetSlot(text, slotLabel, slotKey);
   if (!asksTarget) {
@@ -361,6 +549,8 @@ function formatKnownSlots(slots) {
 async function askNextQuestion(state) {
   const nextSlot = state.nextSlotToAsk;
   const slotLabel = SLOT_LABELS[nextSlot];
+  const lastUserMessage = [...state.messages].reverse().find((m) => getMessageRole(m) === 'human');
+  const lastUserText = lastUserMessage ? getMessageText(lastUserMessage) : '';
 
   if (nextSlot === 'cafeteriaMode') {
     const resumeMessage = state.resumePreviousQuestion ? RESUME_PREVIOUS_QUESTION_MESSAGE : null;
@@ -368,12 +558,24 @@ async function askNextQuestion(state) {
     const cafeteriaQuestion = sceneValue.includes('食堂') && sceneValue.includes('外卖')
       ? `明白，平时食堂和外卖会穿插着吃，我记下了～${CAFETERIA_MODE_QUESTION}`
       : CAFETERIA_MODE_QUESTION;
+    const safetySignal = detectSafetySignalNeedingClarification(
+      lastUserText,
+      state.slots?.restrictions?.value
+    );
+    const safeCafeteriaQuestion = safetySignal
+      ? buildSafetyClarificationQuestion(safetySignal)
+      : prependRestrictionAcknowledgement({
+        replyText: cafeteriaQuestion,
+        userText: lastUserText,
+        restrictionsValue: state.slots?.restrictions?.value,
+        messages: state.messages,
+      });
     return {
       messages: [
         resumeMessage,
         state.emotionalSupportDeliveredThisTurn
-          ? `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${cafeteriaQuestion}`
-          : cafeteriaQuestion,
+          ? `如果你愿意，我们就从眼前最容易回答的一点继续聊聊，好吗？${safeCafeteriaQuestion}`
+          : safeCafeteriaQuestion,
       ]
         .filter(Boolean)
         .map((content) => ({ role: 'ai', content })),
@@ -384,8 +586,26 @@ async function askNextQuestion(state) {
     };
   }
 
-  const lastUserMessage = [...state.messages].reverse().find((m) => getMessageRole(m) === 'human');
-  const lastUserText = lastUserMessage ? getMessageText(lastUserMessage) : '';
+  const safetySignal = detectSafetySignalNeedingClarification(
+    lastUserText,
+    state.slots?.restrictions?.value
+  );
+  if (safetySignal) {
+    const isFirstTurn = isFirstConversationTurn(state.messages);
+    return {
+      messages: [
+        isFirstTurn ? FIRST_TURN_INTRO : null,
+        buildSafetyClarificationQuestion(safetySignal),
+      ]
+        .filter(Boolean)
+        .map((content) => ({ role: 'ai', content })),
+      lastAskedSlot: nextSlot,
+      ...(state.resumePreviousQuestion ? { resumePreviousQuestion: false } : {}),
+      ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+      ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
+    };
+  }
+
   const emojiOnly = /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji_Modifier}|\uFE0F|\u200D|\s)+$/u.test(lastUserText.trim());
   if (emojiOnly) {
     return {
@@ -397,9 +617,78 @@ async function askNextQuestion(state) {
       lastAskedSlot: state.lastAskedSlot || nextSlot,
     };
   }
-  const fixedProductAnswer = state.directQuestionAnsweredThisTurn ? null : getFixedProductAnswer(lastUserText);
+  const fixedProductAnswer = getFixedProductAnswer(lastUserText);
   const isFirstTurn = isFirstConversationTurn(state.messages);
+  if (fixedProductAnswer) {
+    // fix4c-4：固定话术命中 → 整轮确定性。
+    // directQuestion 已单独出话术气泡（directQuestionAnsweredThisTurn）时不重复出话术；
+    // 采集问句直接用固定模板，不让模型生成——模型采集会漂移措辞（F1/F2/F3 不逐字一致）、
+    // 编造用户目标（F2"听到你想减脂"）、复述已答观点（F4 双答）。
+    const questionBubble =
+      FALLBACK_SLOT_QUESTIONS[nextSlot] ||
+      `关于"${SLOT_LABELS[nextSlot]}"，方便再补充一点具体情况吗？`;
+    const bubbles = [];
+    if (isFirstTurn) bubbles.push(FIRST_TURN_INTRO);
+    if (!state.directQuestionAnsweredThisTurn) bubbles.push(fixedProductAnswer);
+    bubbles.push(questionBubble);
+    return {
+      messages: bubbles.map((content) => ({ role: 'ai', content })),
+      lastAskedSlot: nextSlot,
+      ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
+      ...(state.resumePreviousQuestion ? { resumePreviousQuestion: false } : {}),
+      ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+    };
+  }
+  // fix4d-2b：原条件 isFirstTurn 依赖 isFirstConversationTurn()（要求
+  // aiCount===0），但图的第一个节点 provideEmotionalSupport 在首轮就
+  // 会把 FIRST_TURN_INTRO 作为 ai 消息写入 state.messages，导致该条件
+  // 在本节点永远为 false——这个纯寒暄确定性分支自 fix4c-3 起从未触发
+  // 过，"你好"实际一直走模型路径（双稳态：fix4c-4 碰巧带问句、fix4d-2
+  // 翻成抄示例无问句，见测试记录-2026-09-02-fix4d-2/fix4d-2b）。
+  // 改为按"用户只说过一句话"判定首轮；介绍已由上游发出则不重复，
+  // 未发出（防御分支，当前图结构下不可达）则带上。
+  const humanTurnCount = state.messages.filter(
+    (message) => getMessageRole(message) === 'human'
+  ).length;
+  const introAlreadySent = state.messages.some(
+    (message) =>
+      getMessageRole(message) === 'ai' &&
+      getMessageText(message) === FIRST_TURN_INTRO
+  );
+  if (humanTurnCount === 1 && PURE_GREETING_REGEX.test(lastUserText.trim())) {
+    const greetingReply =
+      '你好呀～我刚开始了解你的饮食习惯，先从最简单的开始：你平时吃饭主要是食堂还是外卖呀？';
+    return {
+      messages: [{
+        role: 'ai',
+        content: introAlreadySent
+          ? greetingReply
+          : FIRST_TURN_INTRO + '\n' + greetingReply,
+      }],
+      lastAskedSlot: nextSlot,
+    };
+  }
   const hasGeneralQuestion = GENERAL_QUESTION_REGEX.test(lastUserText.trim());
+  const hasScenarioCraving = SCENARIO_FOOD_CRAVING_REGEX.test(lastUserText);
+  const hasHealthConcern = BODY_HEALTH_CONCERN_REGEX.test(lastUserText);
+  const hasPriceChallenge = PRICE_CHALLENGE_REGEX.test(lastUserText);
+  const hasCounterArgument = COUNTER_ARGUMENT_REGEX.test(lastUserText);
+  const hasUnknownAiComparison = UNKNOWN_AI_COMPARISON_REGEX.test(lastUserText);
+
+  let sideAnswer = null;
+  if (!state.directQuestionAnsweredThisTurn && hasGeneralQuestion && !fixedProductAnswer) {
+    const sideResponse = await model.invoke([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content:
+          '用户刚才先问了一个问题。只直接回答这个问题，控制在一到两句话；不要询问六项信息，' +
+          '不要开始饮食信息采集，不要提前生成饮食方案。后续采集问题会由另一个步骤单独发送。',
+      },
+      ...state.messages,
+    ]);
+    sideAnswer = String(sideResponse.content || '').trim();
+  }
 
   const taskInstruction =
     `【本轮任务】六项信息采集里，"${slotLabel}"这一项还没有确认，你这一轮需要` +
@@ -419,6 +708,9 @@ async function askNextQuestion(state) {
       ? '上一条消息已经完成了情绪共情、鼓励和解决方向。这里绝对不要再次说“压力很大”“焦虑”“抱抱”或重复安慰，' +
         '只需要自然承接并问目标字段；外部代码会加上是否愿意开始的过渡。\n\n'
       : '') +
+    (sideAnswer
+      ? `用户本轮的问题已由另一条消息单独回答过了（内容：${sideAnswer}）。你生成的这部分绝不允许重复、转述或引申其核心观点，直接继续问目标字段。\n\n`
+      : '') +
     (fixedProductAnswer
       ? '用户这一轮还顺带问了产品功能、提醒、收费或服务选项问题，这部分会由外部代码用固定产品话术回答。' +
         '你生成的内容里不要重复回答产品问题，只继续完成本轮缺失信息的提问。\n\n'
@@ -426,11 +718,28 @@ async function askNextQuestion(state) {
         ? '用户这一轮还提出了一个其他问题，这部分会由外部流程先单独回答。你不要重复回答，' +
           '这里只继续完成本轮缺失信息的提问。\n\n'
         : '') +
+    (hasPriceChallenge
+      ? '用户这一轮在质疑收费/拿免费 AI 对比（如"免费你凭什么收钱""为什么收费"）。先按第 51 条三段式话术正面回应这个质疑（承认→拆差别→收尾），回应完再自然回归本轮采集项；不得装作没听见继续问缺失项。\n\n'
+      : '') +
+    (hasCounterArgument
+      ? '用户本轮在反驳/质疑你上一轮的回复（带"也有/但是/那又"等语气，如"豆包也有记忆啊"）。先正面回应 TA 的关切：涉及免费 AI 对比按第 51 条三段式（差异落在"记得之后干什么"，不说"它们不记得你"），涉及跟踪/边界按第 52、53 条；回应完再自然回归本轮采集项；不得装作没听见继续问缺失项。\n\n'
+      : '') +
+    (hasUnknownAiComparison
+      ? '用户提了一个你没听过的 AI 产品/助手/大模型（或"那个什么助手"这类指代）在对比。只要语义是"它也能做到/它免费/它也有记忆/凭什么用你"，一律先按第 51 条三段式正面回应（承认→拆差别→收尾），再问采集项；名字陌生不许忽略、不许反问"你说的是什么"。\n\n'
+      : '') +
+    (hasScenarioCraving || hasHealthConcern
+      ? '用户这一轮带了一个具体的饮食/身体诉求，不是对采集问题的正面回答。先接住它：' +
+        (hasScenarioCraving
+          ? '回复必须包含三部分、按顺序连成一段：①一句接住（不否定想吃的意愿）；②至少一个具体判断依据（点出更值得吃的选择或吃法，如锅底/配菜/蘸料怎么挑，或吃完这一顿怎么调）；③一句本轮采集项问句。三部分缺一即不合格；'
+          : '接住诉求，给 1~2 句可执行的饮食方向，不评判、不硬拉回减重采集。') +
+        '然后再自然问出本轮目标项。禁止只回一句"好的记下了/明白你想吃XX"就继续问。' +
+        '注意：接住诉求 ≠ 出方案，完整方案依然禁止。\n\n'
+      : '') +
     '【严格禁止】这一轮唯一的任务就是问出这一项缺失的信息，绝对不能在这一轮' +
     '提前给出任何具体的饮食方案、菜品推荐、分量建议——哪怕你觉得已经确认的' +
     '信息看起来已经足够多、已经能大概判断出方案该怎么搭，也必须忍住不要提前' +
     '给。是否已经可以出方案，这个判断已经由外部状态机做出了明确结论（现在' +
-    `的结论是"还不能出方案，还差${slotLabel}这一项"），不是由你自己根据` +
+    `的结论是"还不能出方案，当前需要先补充${slotLabel}这一项"），不是由你自己根据` +
     '对话内容判断的，你不需要也不能重新评估这个结论。完整系统规则里如果有' +
     '类似"信息差不多齐了可以先给个初步方向"这类说法，这一轮不适用，以这条' +
     '禁止项为准——提前给方案是这一轮最严重的错误，比问题问得不够自然更严重。';
@@ -438,21 +747,6 @@ async function askNextQuestion(state) {
   const userMessages = state.messages
     .filter((m) => getMessageRole(m) === 'human')
     .map((m) => getMessageText(m));
-
-  let sideAnswer = null;
-  if (!state.directQuestionAnsweredThisTurn && hasGeneralQuestion && !fixedProductAnswer) {
-    const sideResponse = await model.invoke([
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'system',
-        content:
-          '用户刚才先问了一个问题。只直接回答这个问题，控制在一到两句话；不要询问六项信息，' +
-          '不要开始饮食信息采集，不要提前生成饮食方案。后续采集问题会由另一个步骤单独发送。',
-      },
-      ...state.messages,
-    ]);
-    sideAnswer = String(sideResponse.content || '').trim();
-  }
 
   async function generateOnce(prematurePlanInstruction) {
     return generateWithFormatGuard({
@@ -478,15 +772,22 @@ async function askNextQuestion(state) {
   let replyText = '';
   let prematurePlanViolations = [];
   const MAX_PREMATURE_PLAN_RETRIES = 2;
+  const skipVerbosity = hasPriceChallenge || hasCounterArgument || hasScenarioCraving || hasHealthConcern;
 
   for (let attempt = 0; attempt <= MAX_PREMATURE_PLAN_RETRIES; attempt += 1) {
     const extraInstruction =
       attempt === 0 ? null : buildPrematurePlanRetryInstruction(prematurePlanViolations, slotLabel, replyText);
     // eslint-disable-next-line no-await-in-loop
     const result = await generateOnce(extraInstruction);
-    replyText = result.text;
+    replyText = stripOrphanLeadingColon(result.text);
     // eslint-disable-next-line no-await-in-loop
-    prematurePlanViolations = await detectAskNextQuestionViolations(replyText, slotLabel, nextSlot, state.slots);
+    prematurePlanViolations = await detectAskNextQuestionViolations(
+      replyText,
+      slotLabel,
+      nextSlot,
+      state.slots,
+      { skipVerbosity }
+    );
 
     if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
@@ -526,10 +827,22 @@ async function askNextQuestion(state) {
         replyText
       );
     }
-    replyText = buildFallbackSlotQuestion(nextSlot);
+    const safetySignal = detectSafetySignalNeedingClarification(
+      lastUserText,
+      state.slots?.restrictions?.value
+    );
+    replyText = safetySignal
+      ? buildSafetyClarificationQuestion(safetySignal)
+      : buildFallbackSlotQuestion(nextSlot, lastUserText);
   }
 
   replyText = normalizeFoodRejectionTransition(replyText, lastUserText, nextSlot);
+  replyText = prependRestrictionAcknowledgement({
+    replyText,
+    userText: lastUserText,
+    restrictionsValue: state.slots?.restrictions?.value,
+    messages: state.messages,
+  });
 
   // 第一项尚未真正收到任何资料时不能说“记下啦”，否则像把固定模板
   // 生硬贴在问题前面。只清理首次场景问题，不影响后续真实的承接确认。
@@ -592,4 +905,20 @@ module.exports = {
   composeReplyMessages,
   normalizeFoodRejectionTransition,
   TASTE_PROFILE_SCENE_TRANSITION,
+  stripOrphanLeadingColon,
+  getRemainingCollectionSlotKeys,
+  detectMisleadingCollectionProgress,
+  getNewRestrictionLabel,
+  hasVisibleRestrictionAcknowledgement,
+  prependRestrictionAcknowledgement,
+  detectSafetySignalNeedingClarification,
+  buildSafetyClarificationQuestion,
+  NAMED_AI_REGEX,
+  COMPARISON_CHALLENGE_REGEX,
+  MEMORY_COUNTER_REGEX,
+  PRICE_CHALLENGE_REGEX,
+  buildComparisonChallengeAnswer,
+  buildMemoryCounterAnswer,
+  isComparisonChallenge,
+  isMemoryAttack,
 };

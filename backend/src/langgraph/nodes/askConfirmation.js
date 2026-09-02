@@ -19,6 +19,7 @@ const { SLOT_LABELS } = require('../state');
 const { findLastUserMessage, getMessageText } = require('../utils/messages');
 const { FIRST_TURN_INTRO, getFixedProductAnswer, isFirstConversationTurn } = require('./askNextQuestion');
 const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
+const { detectWeightSafetyResponse } = require('../weightSafety');
 
 const SIDE_QUESTION_REGEX = /[？?]|(吗|嘛|么|为什么|怎么|如何|什么意思|能不能|可不可以|有没有)[。！!～~]?$/;
 
@@ -26,6 +27,26 @@ async function askConfirmation(state) {
   const pending = state.pendingConfirmation;
   const isFirstTimeSurprise = pending.oldValue === null;
   const askedCount = (pending.askedCount || 0) + 1;
+  const lastUserText = getMessageText(findLastUserMessage(state.messages));
+
+  if (pending.field === 'goal') {
+    const weightSafety = detectWeightSafetyResponse({
+      userText: lastUserText,
+      goalText: pending.newValue,
+      bodyProfile: state.bodyProfile || {},
+    });
+    if (weightSafety) {
+      const firstTurnIntro = isFirstConversationTurn(state.messages) ? FIRST_TURN_INTRO : null;
+      return {
+        messages: [firstTurnIntro, weightSafety.text]
+          .filter(Boolean)
+          .map((content) => ({ role: 'ai', content })),
+        pendingConfirmation: null,
+        ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+        ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
+      };
+    }
+  }
 
   let response;
   if (pending.reason?.type === 'dish_flavor_inference') {
@@ -44,7 +65,6 @@ async function askConfirmation(state) {
   } else {
     response = { content: buildConfirmationText(pending) };
   }
-  const lastUserText = getMessageText(findLastUserMessage(state.messages));
   const fixedAnswer = state.directQuestionAnsweredThisTurn ? null : getFixedProductAnswer(lastUserText);
   let sideAnswer = null;
   if (!state.directQuestionAnsweredThisTurn && !fixedAnswer && SIDE_QUESTION_REGEX.test(lastUserText.trim())) {

@@ -4,16 +4,61 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 
 const { ChatOpenAI } = require('@langchain/openai');
 
+function withUsageLogging(fields, label) {
+  const startedAtByRun = new Map();
+  const usageHandler = {
+    name: `usage-logger-${label}`,
+    handleLLMStart(_llm, _prompts, runId) {
+      startedAtByRun.set(runId, Date.now());
+    },
+    handleLLMEnd(result, runId) {
+      const startedAt = startedAtByRun.get(runId) || Date.now();
+      startedAtByRun.delete(runId);
+
+      if (process.env.USAGE_LOG === '0') return;
+
+      const message = result?.generations?.[0]?.[0]?.message;
+      const responseUsage = message?.response_metadata?.token_usage
+        || message?.response_metadata?.tokenUsage
+        || result?.llmOutput?.tokenUsage
+        || result?.llmOutput?.estimatedTokenUsage
+        || {};
+      const messageUsage = message?.usage_metadata || {};
+      console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        label,
+        promptTokens: responseUsage.prompt_tokens
+          ?? responseUsage.promptTokens
+          ?? messageUsage.input_tokens
+          ?? null,
+        completionTokens: responseUsage.completion_tokens
+          ?? responseUsage.completionTokens
+          ?? messageUsage.output_tokens
+          ?? null,
+        durationMs: Date.now() - startedAt,
+      }));
+    },
+    handleLLMError(_error, runId) {
+      startedAtByRun.delete(runId);
+    },
+  };
+
+  return {
+    ...fields,
+    callbacks: [...(fields.callbacks || []), usageHandler],
+  };
+}
+
 // 跟用户对话、生成自然回复用这个——temperature调高一些是故意的，
 // 需要语气有变化、不machine化。
-const model = new ChatOpenAI({
+const model = new ChatOpenAI(withUsageLogging({
   model: 'qwen-plus',
   temperature: 0.7,
   apiKey: process.env.BAILIAN_API_KEY,
   configuration: {
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
-});
+}, 'model'));
 
 // 真实测试发现：extractSlots（孤立数字"20"该不该填budget，连续5次跑
 // 5次都错）、checkAsksTargetSlot（首轮"你好"这种明显合格的开场白，
@@ -25,13 +70,13 @@ const model = new ChatOpenAI({
 // resolvePendingConfirmation解析待确认回应、checkAsksTargetSlot判断
 // 有没有问到目标字段）统一改用这个低temperature实例，跟对话生成的
 // model分开，互不影响各自需要的特性。
-const classifierModel = new ChatOpenAI({
+const classifierModel = new ChatOpenAI(withUsageLogging({
   model: 'qwen-plus',
   temperature: 0,
   apiKey: process.env.BAILIAN_API_KEY,
   configuration: {
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
-});
+}, 'classifierModel'));
 
 module.exports = { model, classifierModel };

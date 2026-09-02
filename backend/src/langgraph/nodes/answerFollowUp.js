@@ -4,6 +4,11 @@ const { findLastUserMessage, getMessageText } = require('../utils/messages');
 
 const SIMPLE_ACK_REGEX = /^(?:好|好的|好呀|可以|行|知道了|明白了|收到|谢谢|谢谢你|ok|okay)[。！!～~]?$/i;
 const TEMPORARY_FOOD_CRAVING_REGEX = /(?:现在|今天|这顿|待会儿|一会儿)?[^。！？]{0,12}(?:想吃|馋|想来(?:一份|一个|点)?)/;
+const DAILY_EXHAUSTION_REGEX =
+  /(好累|太累|累死|累趴|好烦|烦死了|压力好大|压力大|今天好难|难过|心情不好|心情差|好难受|提不起劲|没力气|emo)/i;
+const EXERCISE_CONTEXT_REGEX = /(运动|跑步|健身|锻炼|练完|课后)/;
+const FOOD_UNAVAILABLE_REGEX =
+  /(没有这个菜|没有这道菜|食堂没有|食堂没卖|买不到|没买到|卖完了|售罄|找不到|没有这个|换成别的|换了菜)/;
 const SECOND_MESSAGE_SEPARATOR = '<<<SECOND_MESSAGE>>>';
 const REGISTRATION_MEMORY_QUESTION_REGEX =
   /(?=.*(?:注册|登录|账号))(?=.*(?:记得|记住|保存|存档))(?=.*(?:上一顿|之前|以前|吃了什么))/;
@@ -82,6 +87,15 @@ function compactEvents(events) {
   }));
 }
 
+function buildEvidenceList(events, hasLongTermAccess) {
+  if (!hasLongTermAccess || !(events || []).length) return '（暂无）';
+  return events.slice(0, MAX_RECENT_EVENTS).map((event) => {
+    const occurredAt = compactText(event.occurredAt, 80) || '时间未记录';
+    const summary = compactText(event.payload?.summary, 240) || compactText(event.eventType, 80) || '事件未描述';
+    return `${occurredAt}：${summary}`;
+  }).join('\n');
+}
+
 function compactAdvice(items) {
   return (items || []).slice(0, 5).map((item) => ({
     adviceType: item.adviceType,
@@ -113,6 +127,7 @@ function buildFollowUpContextMessage(longTermContext) {
     pausedPlan: hasLongTermAccess ? compactPlan(longTermContext.pausedPlan) : null,
     energyEstimate: hasLongTermAccess ? compactEnergy(longTermContext.latestEnergyCalculation) : null,
     recentEvents: hasLongTermAccess ? compactEvents(longTermContext.recentEvents) : [],
+    evidenceList: buildEvidenceList(longTermContext.recentEvents, hasLongTermAccess),
     recentAdvice: compactAdvice(longTermContext.recentAdvice),
     developerTestPersona: longTermContext.developerTestPersona || null,
     timeline: hasLongTermAccess ? longTermContext.timeline : null,
@@ -129,6 +144,7 @@ function buildFollowUpContextMessage(longTermContext) {
       '回答要求：先直接回答本轮问题；不要主动复述整份档案、计算过程或内部字段；' +
       '如果引用摘要里的历史档案，必须明确说“之前的档案里记录过”，禁止说成“你刚才提到”或冒充本轮用户原话；' +
       '不要声称摘要中没有的事实；近期事件按新到旧排列；除非用户明确询问，否则不要主动提及经期或具体热量数字；' +
+      '【档案真实记录清单】只列在evidenceList字段里。回答里出现的任何日期、食物、次数、身体状态，必须能逐字对应evidenceList中的条目；对应不上的，一律视为编造，绝对禁止。' +
       '长期用户已经知道秘书会记住资料。给出餐食或阶段方案时直接说安排，不要重复解释“结合你的预算、食堂模式、目标和档案来搭配”，' +
       '也不要为了证明记忆而复述睡眠、饥饿、力气等已知情况；只有该信息直接影响本轮安全判断时才简短提及。' +
       'activePlan存在时，不得说“这周没有规划”或“尚未建立计划”；应直接概括当前阶段目标。' +
@@ -245,8 +261,22 @@ async function answerFollowUp(state, { chatModel = model } = {}) {
     };
   }
 
+  if (hasLongTermAccess &&
+      DAILY_EXHAUSTION_REGEX.test(userText) &&
+      !EXERCISE_CONTEXT_REGEX.test(userText)) {
+    return {
+      messages: [{
+        role: 'ai',
+        content:
+          '今天累的话就先别硬撑啦～这只是今天的状态，我不会把它当成你的长期运动状态更新。' +
+          '要不要先聊聊今天吃了什么，或者干脆休息一下，明天再说？',
+      }],
+    };
+  }
+
   const longTermContextMessage = buildFollowUpContextMessage(state.longTermContext);
   const isTemporaryFoodCraving = TEMPORARY_FOOD_CRAVING_REGEX.test(userText);
+  const isFoodUnavailable = FOOD_UNAVAILABLE_REGEX.test(userText);
   const response = await chatModel.invoke([
     { role: 'system', content: SYSTEM_PROMPT },
     {
@@ -263,6 +293,15 @@ async function answerFollowUp(state, { chatModel = model } = {}) {
         '第一条直接告诉用户这顿想吃的食物怎样搭配、建议分量和需要留意的地方；' +
         '不要使用“按原计划继续”“原计划”“记录下来”等含糊说法。' +
         '第二条由秘书主动给出一个更清爽但口味相近、现实中容易买到的替代选择，不能反问用户要不要看其他选择，结尾也不要提问。',
+    }] : []),
+    ...(isFoodUnavailable ? [{
+      role: 'system',
+      content:
+        '用户反馈方案或建议里的菜在食堂买不到。先明确接住这个反馈，不能装没听见，也不能重问用户已经回答过的问题；' +
+        '结合用户已确认的口味、预算和就餐场景，给1到2个同类替代方向：主食换同类主食、蛋白质换同类蛋白质、蔬菜换同类蔬菜，' +
+        '优先选择食堂常见、现实中容易买到的替代。使用“换成”“也可以试试”或“先拿这个顶上”这类直接措辞，' +
+        '用户没有说出原菜名时，不得自行猜测或编造原菜名，只给类别层面的替代方向。' +
+        '结尾只轻轻确认替代是否可行，不要再问一遍原问题。不得使用“按原计划继续”“原计划”或“记录下来”等含糊说法。',
     }] : []),
     ...(longTermContextMessage ? [longTermContextMessage] : []),
     ...state.messages,
@@ -282,11 +321,15 @@ module.exports = {
   answerFollowUp,
   SIMPLE_ACK_REGEX,
   TEMPORARY_FOOD_CRAVING_REGEX,
+  DAILY_EXHAUSTION_REGEX,
+  EXERCISE_CONTEXT_REGEX,
+  FOOD_UNAVAILABLE_REGEX,
   SECOND_MESSAGE_SEPARATOR,
   REGISTRATION_MEMORY_QUESTION_REGEX,
   EXECUTION_STATUS_QUESTION_REGEX,
   REPEATED_LONG_TERM_GOAL_REGEX,
   MAX_CONTEXT_CHARS,
   MAX_RECENT_EVENTS,
+  buildEvidenceList,
   buildFollowUpContextMessage,
 };

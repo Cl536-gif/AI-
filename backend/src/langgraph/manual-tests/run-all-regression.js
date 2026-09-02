@@ -36,6 +36,7 @@ const CHAT_LANGGRAPH_URL = process.env.CHAT_LANGGRAPH_URL || 'http://localhost:3
 const SCRIPTS = [
   { file: 'scenario22-cycle-onboarding.js', needsServer: false, needsNetwork: false },
   { file: 'scenario40-browser-comments-regression.js', needsServer: false, needsNetwork: false },
+  { file: 'scenario44-cafeteria-real-path-repeat.js', needsServer: true, needsNetwork: true },
   { file: 'scenario41-user-archived-flow-http.js', needsServer: true, needsNetwork: true },
   { file: 'scenario42-natural-onboarding-and-open-dish.js', needsServer: false, needsNetwork: false },
   { file: 'scenario43-food-rejection-transition.js', needsServer: false, needsNetwork: false },

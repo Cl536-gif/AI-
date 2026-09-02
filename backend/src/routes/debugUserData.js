@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const userStore = require('../services/userStore');
 const { resolveAnonymousUser, validateDeviceId } = require('../services/identityService');
@@ -75,8 +76,34 @@ async function ensureLongTermFixture(userId, { persona, now, trialStartedAt }) {
   return activePlan;
 }
 
+function getPresentedAdminToken(req) {
+  const authorization = req.get('authorization');
+  if (typeof authorization === 'string') {
+    const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
+    if (bearerMatch?.[1]) return bearerMatch[1].trim();
+  }
+  return typeof req.query?.token === 'string' ? req.query.token : null;
+}
+
+function adminTokensMatch(presentedToken, configuredToken) {
+  if (typeof presentedToken !== 'string' || typeof configuredToken !== 'string') return false;
+  const presentedBuffer = Buffer.from(presentedToken, 'utf8');
+  const configuredBuffer = Buffer.from(configuredToken, 'utf8');
+  if (presentedBuffer.length !== configuredBuffer.length) return false;
+  return crypto.timingSafeEqual(presentedBuffer, configuredBuffer);
+}
+
 router.use((req, res, next) => {
-  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: '接口不存在' });
+  if (process.env.NODE_ENV !== 'production') return next();
+
+  const configuredToken = process.env.DEBUG_ADMIN_TOKEN;
+  if (!configuredToken) return res.status(404).json({ error: '接口不存在' });
+
+  const presentedToken = getPresentedAdminToken(req);
+  if (!presentedToken) return res.status(404).json({ error: '接口不存在' });
+  if (!adminTokensMatch(presentedToken, configuredToken)) {
+    return res.status(401).json({ error: '未授权' });
+  }
   return next();
 });
 

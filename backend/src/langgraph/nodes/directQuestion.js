@@ -4,6 +4,7 @@ const { SYSTEM_PROMPT } = require('../../services/systemPrompt');
 const { findLastUserMessage, getMessageText } = require('../utils/messages');
 const { buildFollowUpContextMessage } = require('./answerFollowUp');
 const { getFixedProductAnswer } = require('./askNextQuestion');
+const { detectWeightSafetyResponse } = require('../weightSafety');
 
 const DirectQuestionSchema = z.object({
   hasDirectQuestion: z.boolean().describe('用户本轮是否明确向秘书提出了需要回答的问题'),
@@ -29,6 +30,11 @@ function isQuestionCandidate(userText) {
 
 async function detectDirectQuestion(state, { detector = structuredDetector } = {}) {
   const userText = getMessageText(findLastUserMessage(state.messages)).trim();
+  const weightSafety = detectWeightSafetyResponse({
+    userText,
+    bodyProfile: getKnownBodyProfile(state),
+  });
+  if (weightSafety) return { directQuestion: userText };
   if (!isQuestionCandidate(userText)) {
     return { directQuestion: null, directQuestionAnsweredThisTurn: false };
   }
@@ -63,6 +69,19 @@ async function detectDirectQuestion(state, { detector = structuredDetector } = {
 async function answerDirectQuestion(state, { chatModel = model } = {}) {
   const questionText = String(state.directQuestion || '').trim();
   if (!questionText) return { directQuestion: null };
+
+  const weightSafety = detectWeightSafetyResponse({
+    userText: questionText,
+    bodyProfile: getKnownBodyProfile(state),
+  });
+  if (weightSafety) {
+    return {
+      messages: [{ role: 'ai', content: weightSafety.text }],
+      directQuestion: null,
+      directQuestionAnsweredThisTurn: true,
+      skipCandidateFieldsOnce: ['goal'],
+    };
+  }
 
   const contextMessage = buildFollowUpContextMessage(state.longTermContext);
   const fixedProductAnswer = getFixedProductAnswer(questionText);
@@ -147,6 +166,12 @@ async function answerDirectQuestion(state, { chatModel = model } = {}) {
   };
 }
 
+function getKnownBodyProfile(state) {
+  const graphProfile = state.bodyProfile || {};
+  if (graphProfile.heightCm != null || graphProfile.currentWeightKg != null) return graphProfile;
+  return state.longTermContext?.profile?.profile?.body || {};
+}
+
 function shouldUseEmptyProfileMealAnswer(questionText, longTermContext = null) {
   const hasKnownProfile = Boolean(longTermContext?.profile?.profile);
   const hasKnownHistory = Boolean(
@@ -215,6 +240,8 @@ function detectDirectAnswerIssues(questionText, answerText, longTermContext = nu
 
 function buildEmptyProfileDirectAnswer(questionText) {
   const question = String(questionText || '');
+  const fixedProductAnswer = getFixedProductAnswer(question);
+  if (fixedProductAnswer) return fixedProductAnswer;
   if (/(?:吃|餐|食物|外卖|食堂|早餐|午餐|晚餐|加餐)/.test(question)) {
     return (
       '我目前还没有你已确认的就餐方式和口味资料，所以先给你一个不依赖个人档案的通用搭配：' +

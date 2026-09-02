@@ -142,9 +142,15 @@ async function run() {
     path.join(__dirname, 'src/routes/chatLanggraph.js'),
     'utf8'
   );
+  const conversationSource = fs.readFileSync(
+    path.join(__dirname, 'src/services/langgraphConversationService.js'),
+    'utf8'
+  );
   assert(routeSource.includes('assertHttpCanaryRequest'));
-  assert(routeSource.includes('invokeGraphWithCheckpointerPolicy'));
-  assert(routeSource.lastIndexOf('assertHttpCanaryRequest') < routeSource.indexOf('resolveAnonymousUser(deviceId)'));
+  assert(conversationSource.includes('invokeGraphWithCheckpointerPolicy'));
+  assert(conversationSource.includes('resolveAnonymousUser(deviceId)'));
+  assert(routeSource.lastIndexOf('assertHttpCanaryRequest') <
+    routeSource.lastIndexOf('processLangGraphConversation'));
   console.log(JSON.stringify({
     batch: '005h-postgres-http-canary-boundary',
     status: 'PASS',

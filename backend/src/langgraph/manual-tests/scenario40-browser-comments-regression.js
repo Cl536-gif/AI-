@@ -13,10 +13,65 @@ const {
 const { formatLongReplyForReadability } = require('../../routes/chatLanggraph');
 const { answerFollowUp } = require('../nodes/answerFollowUp');
 const { detectFormatViolations } = require('../../services/formatGuard');
-const { detectUnconfirmedSlotAssertions } = require('../nodes/askNextQuestion');
+const {
+  detectUnconfirmedSlotAssertions,
+  detectMisleadingCollectionProgress,
+  stripOrphanLeadingColon,
+} = require('../nodes/askNextQuestion');
 const { extractExplicitCycleDates, mergeCycleProfile, cycleProfileNeedsMore } = require('../nodes/resolveCycleOnboarding');
 
 async function main() {
+  if (stripOrphanLeadingColon('：需要避开羊肉～ 那最后想问问你') !== '需要避开羊肉～ 那最后想问问你') {
+    throw new Error('句首孤立中文冒号没有被正确清理');
+  }
+  if (stripOrphanLeadingColon(': 需要避开羊肉～') !== '需要避开羊肉～') {
+    throw new Error('句首孤立英文冒号没有被正确清理');
+  }
+
+  const cafeteriaPathBeforeRestrictions = {
+    scene: { value: '食堂', confirmed: true },
+    cafeteriaMode: { value: '自选', confirmed: true },
+    taste: { value: '偏辣', confirmed: true },
+    budget: { value: '30元以内', confirmed: true },
+    restrictions: { value: null, confirmed: false },
+    goal: { value: null, confirmed: false },
+    exercise: { value: null, confirmed: false },
+  };
+  const budgetProgressViolation = detectMisleadingCollectionProgress(
+    '30元以内一顿是吧，好的～ 现在还差最后一个小问题：有没有吃了会不舒服的食物？',
+    cafeteriaPathBeforeRestrictions
+  );
+  if (!budgetProgressViolation.some((item) => item.type === 'misleading_collection_progress')) {
+    throw new Error('预算后仍缺三项时，“还差最后一个”没有被状态确定性拦截');
+  }
+
+  const cafeteriaPathBeforeGoal = {
+    ...cafeteriaPathBeforeRestrictions,
+    restrictions: { value: '需要避开羊肉', confirmed: true },
+  };
+  const restrictionProgressViolation = detectMisleadingCollectionProgress(
+    '需要避开羊肉～ 那最后想问问你：这次调整饮食最希望达到什么目标？',
+    cafeteriaPathBeforeGoal
+  );
+  if (!restrictionProgressViolation.some((item) => item.type === 'misleading_collection_progress')) {
+    throw new Error('忌口后仍缺两项时，“最后想问问你”没有被状态确定性拦截');
+  }
+  const unseenWordingViolation = detectMisleadingCollectionProgress(
+    '那最后再确认一个小但重要的点：有没有需要避开的食物？',
+    cafeteriaPathBeforeRestrictions
+  );
+  if (!unseenWordingViolation.some((item) => item.type === 'misleading_collection_progress')) {
+    throw new Error('真实回放新出现的“最后再确认一个”变体没有被状态确定性拦截');
+  }
+
+  const cafeteriaPathBeforeExercise = {
+    ...cafeteriaPathBeforeGoal,
+    goal: { value: '拍照更上镜', confirmed: true },
+  };
+  if (detectMisleadingCollectionProgress('最后了解一下：最近有在规律运动吗？', cafeteriaPathBeforeExercise).length) {
+    throw new Error('实际只剩运动一项时，被错误判成进度播报矛盾');
+  }
+
   const body = parseExplicitBodyUnits('20kg, 165cm 22岁');
   if (body.currentWeightKg !== 20 || body.heightCm !== 165 || body.ageYears !== 22) {
     throw new Error(`混合身体数据识别错误: ${JSON.stringify(body)}`);
@@ -133,6 +188,7 @@ async function main() {
   console.log('✅ 午晚餐不再追问，早餐明确另给方案');
   console.log('✅ 长文本自动分段，简单确认不再重复用户档案与完整方案');
   console.log('✅ 未确认字段不会被提前写进“已记录”摘要，问题里的示例不误伤');
+  console.log('✅ 食堂→自选→辣→30→羊肉→上镜路径的冒号与错误“最后一个”播报已被确定性拦截');
   console.log('✅ 分多轮提供的经期日期会累积，“来了三个月”不会被当成周期长度');
 }
 

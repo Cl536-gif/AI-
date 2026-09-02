@@ -10,6 +10,7 @@ const { generateWithFormatGuard } = require('../../services/formatGuard');
 const localKbBridge = require('../../services/localKbBridge');
 const { SLOT_KEYS, SLOT_LABELS } = require('../state');
 const { getMessageRole, getMessageText } = require('../utils/messages');
+const { detectWeightSafetyResponse } = require('../weightSafety');
 
 const TOP_K_PER_KB = 5;
 
@@ -80,8 +81,38 @@ function stripLeadingParenthetical(text) {
 // 数字，不用重新推导。
 const MIN_PLAN_LENGTH = 20;
 const NO_PLAN_FALLBACK_TEXT = '这次具体的餐食搭配没有生成完整，我不会把它当成已经给过的方案。请回复“重新生成方案”，我会重新给你一份完整搭配。';
+const UNSAFE_RESTRICTION_FALLBACK_TEXT = '这次生成的搭配没有通过忌口安全检查，我不会把它发给你当作可执行方案。请回复“重新生成方案”，我会重新给你一份完全避开忌口成分的搭配。';
 const MEAL_TIMING_CLOSING =
   '这份搭配适合午餐或晚餐；如果想安排早餐，告诉我，我会另外给你早餐方案～';
+
+function detectRestrictionPlanViolations(text, restrictions) {
+  const restrictionText = String(restrictions || '');
+  if (!restrictionText.includes('花生')) return [];
+
+  const value = String(text || '');
+  const firstParagraphEnd = value.search(/\n{2,}/);
+  const planBody = firstParagraphEnd === -1 ? value : value.slice(firstParagraphEnd).trim();
+  const violations = [];
+  const peanutDish = planBody.match(/宫保鸡丁|宫爆鸡丁|花生酱|花生碎|花生米|老醋花生/);
+  if (peanutDish) violations.push(`方案正文出现含花生菜品或成分“${peanutDish[0]}”`);
+  const weakAvoidance = planBody.match(/(?:少碰|少吃|挑出来不吃|挑出(?:来)?)[^。！？\n]{0,12}花生|避开[^。！？\n]{0,12}(?:花生|带花生)/);
+  if (weakAvoidance) violations.push(`方案正文用弱化表述处理花生忌口：“${weakAvoidance[0]}”`);
+  if (!/(?:不含|没有|不放|完全避开)[^。！？\n]{0,4}花生|花生[^。！？\n]{0,4}(?:不含|不放|完全避开)/.test(planBody)) {
+    violations.push('方案正文没有明确说明主菜、配菜和替代方案均不含花生');
+  }
+  return violations;
+}
+
+function buildPeanutSafeFallbackPlan(slots) {
+  const summary = SLOT_KEYS.map((key) => `${SLOT_LABELS[key]}：${slots[key].value}`).join('、');
+  return (
+    `好，按你已经确认的情况：${summary}。\n\n` +
+    '先从今天这一顿开始：主食选半碗米饭，大约一拳大小；蛋白质选一份经窗口明确确认不含任何花生成分的番茄炒蛋，' +
+    '如果没有，就换成同样经窗口确认完全不含花生的一份清蒸鸡腿；蔬菜选一份明确不含花生的清炒青菜，没有的话换成同样不含花生的清炒包菜。' +
+    '主菜、配菜、替代和调味都必须完整排除花生；窗口不能确认成分时，这道菜就不选。想保留辣味，也只选窗口明确确认不含花生及花生制品的辣椒调味。\n\n' +
+    '先按这版试试看，不用一下子改得太多；如果吃完仍然觉得饿，晚一点可以加一个水煮蛋，不用硬扛，有问题可以再来问。'
+  );
+}
 
 function normalizeMealTimingClosing(text) {
   const withoutQuestion = String(text || '')
@@ -136,6 +167,21 @@ const CYCLE_ONBOARDING_QUESTION =
   '后面我会结合你的周期和实际状态，适当调整饮食，帮助你应对容易饿、疲劳或腹胀这些变化。';
 
 async function generatePlan(state) {
+  const weightSafety = detectWeightSafetyResponse({
+    goalText: state.slots.goal?.value,
+    bodyProfile: state.bodyProfile || {},
+    assumeGoalIntent: true,
+  });
+  if (weightSafety?.blocking) {
+    return {
+      messages: [{ role: 'ai', content: weightSafety.text }],
+      retrieved: [],
+      initialPlanDelivered: false,
+      initialMealPlanText: null,
+      pendingServiceAck: null,
+    };
+  }
+
   const query = buildRetrievalQuery(state.slots);
   const perKb = await localKbBridge.retrieveFromKbs(query, config.localKbNames);
   const knowledgeSections = formatKnowledgeSections(perKb);
@@ -172,6 +218,8 @@ async function generatePlan(state) {
     '这一次的方案，不要甩出多日框架）。\n\n' +
     '已经确认的信息：\n' +
     `${formatConfirmedSlots(state.slots)}\n\n` +
+    '【忌口排除铁律】\n' +
+    '生成方案（含所有主菜、配菜、替代方案）前，必须先检查用户档案中已声明的忌口/过敏/不耐受项。任何含有用户已声明忌口成分的菜品，必须整体排除：不得出现在主菜、配菜或任何替代方案中；也不得使用"少碰""挑出来不吃""避开里面的X"这类弱化表述来"补救"。忌口就是整体不出现，不存在"少吃一点"的版本。\n\n' +
     cafeteriaModeInstruction +
     serviceClosingInstruction +
     (knowledgeSections.length > 0
@@ -235,12 +283,38 @@ async function generatePlan(state) {
     );
   }
 
+  let restrictionViolations = detectRestrictionPlanViolations(
+    strippedReplyText,
+    state.slots.restrictions?.value
+  );
+  const MAX_RESTRICTION_RETRIES = 2;
+  for (let attempt = 0; attempt < MAX_RESTRICTION_RETRIES && restrictionViolations.length > 0; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    strippedReplyText = await generateRawPlan(
+      '【忌口安全重试】上一次方案没有通过忌口安全检查：' +
+      restrictionViolations.join('；') + '。必须重新生成整份方案，主菜、配菜和替代方案都完全排除花生及含花生菜品；' +
+      '不得再出现宫保鸡丁，也不得用“少碰”“挑出来不吃”“避开里面的花生”补救。替代菜品要明确说明不含花生。'
+    );
+    restrictionViolations = detectRestrictionPlanViolations(
+      strippedReplyText,
+      state.slots.restrictions?.value
+    );
+  }
+  if (restrictionViolations.length > 0 && String(state.slots.restrictions?.value || '').includes('花生')) {
+    strippedReplyText = buildPeanutSafeFallbackPlan(state.slots);
+    restrictionViolations = detectRestrictionPlanViolations(
+      strippedReplyText,
+      state.slots.restrictions?.value
+    );
+  }
+
   // 不管走免费还是订阅分支，剥离完呼应/括号说明之后再统一做一次内容
   // 完整性兜底，具体逻辑和阈值依据见 MIN_PLAN_LENGTH 的注释。
   const isPlanMissing = !hasConcreteMealPlanContent(strippedReplyText);
-  const replyText = isPlanMissing
-    ? NO_PLAN_FALLBACK_TEXT
-    : normalizeMealTimingClosing(strippedReplyText);
+  const isPlanUnsafe = restrictionViolations.length > 0;
+  const replyText = isPlanUnsafe
+    ? UNSAFE_RESTRICTION_FALLBACK_TEXT
+    : (isPlanMissing ? NO_PLAN_FALLBACK_TEXT : normalizeMealTimingClosing(strippedReplyText));
 
   if (process.env.LANGGRAPH_DEBUG && isPlanMissing) {
     // eslint-disable-next-line no-console
@@ -255,7 +329,7 @@ async function generatePlan(state) {
   // 这句话本身不经过LLM、也不需要走formatGuard检测（纯字符串模板，
   // 不含加粗/列表/emoji/排比句这些违规的可能）。
   const finalText = state.pendingServiceAck ? `${state.pendingServiceAck}\n\n${replyText}` : replyText;
-  if (isPlanMissing) {
+  if (isPlanMissing || isPlanUnsafe) {
     return {
       messages: [{ role: 'ai', content: finalText }],
       retrieved: perKb,

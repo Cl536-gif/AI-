@@ -62,14 +62,14 @@ expectCode({ ...validEnv, TENCENT_PG_HTTP_CANARY_MAX_INSTANCES: '1' }, 'fault',
   'POSTGRES_HTTP_CANARY_SCOPE_INVALID');
 expectCode(validEnv, 'unknown', 'VERIFY_PHASE_INVALID');
 
-const routeSource = fs.readFileSync(
-  path.join(__dirname, 'src/routes/chatLanggraph.js'),
+const conversationSource = fs.readFileSync(
+  path.join(__dirname, 'src/services/langgraphConversationService.js'),
   'utf8'
 );
-assert(routeSource.includes('recoverPendingGraphTurn'));
-assert(routeSource.includes('persistAndAcknowledgeGraphTurn'));
-assert(routeSource.includes('isRetryOfRecoveredTurn'));
-assert(routeSource.includes('HTTP_CANARY_FAULT_AFTER_ADVICE_PERSISTENCE'));
+assert(conversationSource.includes('recoverPendingGraphTurn'));
+assert(conversationSource.includes('persistAndAcknowledgeGraphTurn'));
+assert(conversationSource.includes('isRetryOfRecoveredTurn'));
+assert(conversationSource.includes('HTTP_CANARY_FAULT_AFTER_ADVICE_PERSISTENCE'));
 
 async function run() {
   let requestBody;

@@ -18,7 +18,10 @@ const {
 } = require('./src/langgraph/checkpointerProvider');
 
 const root = __dirname;
-const routeSource = fs.readFileSync(path.join(root, 'src/routes/chatLanggraph.js'), 'utf8');
+const conversationSource = fs.readFileSync(
+  path.join(root, 'src/services/langgraphConversationService.js'),
+  'utf8'
+);
 const gateSource = fs.readFileSync(
   path.join(root, 'src/stores/tencentPostgresCutoverGate.js'),
   'utf8'
@@ -48,7 +51,7 @@ assert.throws(
 const defaultCheckpointerPolicy = resolveLangGraphCheckpointerPolicy({ env: {} });
 assert.strictEqual(defaultCheckpointerPolicy.backend, 'memory');
 assert.strictEqual(defaultCheckpointerPolicy.shared, false);
-assert(routeSource.includes('createLangGraphCheckpointer()'));
+assert(conversationSource.includes('createLangGraphCheckpointer()'));
 assert.throws(
   () => resolveLangGraphCheckpointerPolicy({
     env: {

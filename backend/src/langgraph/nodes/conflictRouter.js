@@ -9,6 +9,11 @@ const { SLOT_LABELS, TRACKED_SLOT_KEYS } = require('../state');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
 const { recognizeDish } = require('../../data/commonDishCatalog');
 
+// fix4c-2：与 askNextQuestion.js 中同名字段保持一致（两处需同步维护）——
+// 命中"具体场景食物诉求/健康诉求"的输入，不转入确认流程，交给模型路径接住诉求
+const SCENARIO_FOOD_CRAVING_REGEX = /想吃|想喝|馋|去吃|吃顿|来顿|炫|干饭|火锅|烧烤|炸鸡|奶茶|麻辣烫|烤肉|螺蛳粉|蛋糕|甜品|炸串|关东煮/;
+const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胀气|口气|溃疡/;
+
 const ClassificationSchema = z.object({
   classification: z
     .enum(['same_meaning', 'correction', 'incidental_mention'])
@@ -233,17 +238,25 @@ async function conflictRouter(state) {
         // AI这一轮主动问的就是这一项，用户是在正面回答问题，风险较低，
         // 按原逻辑直接确认。
         slotUpdates[key] = { value: candidate, confirmed: true };
-      } else if (!firstConflict && !hasExistingPending) {
+      } else if (
+        !firstConflict &&
+        !hasExistingPending &&
+        !SCENARIO_FOOD_CRAVING_REGEX.test(userText) &&
+        !BODY_HEALTH_CONCERN_REGEX.test(userText)
+      ) {
         // 意外字段：AI这一轮没有问这一项，但 candidateSlots 里却冒出来了。
         // 哪怕是"第一次填、没有旧值"，也不能无脑自动确认——统一走确认
         // 流程，oldValue 传 null 表示这不是真的"改口"，是首次出现的
         // 意外候选值。
+        // fix4c-2：用户输入带明确场景食物/健康诉求（如"今晚想吃火锅"）时不
+        // 转入确认——诉求不是对采集项的模糊回答，确认句会显得复读；候选值
+        // 丢弃，交给 askNextQuestion 的"先接住诉求再回归采集"路径处理。
         if (process.env.LANGGRAPH_DEBUG) {
           // eslint-disable-next-line no-console
           console.log(`[conflictRouter] ${key} 是意外字段（非lastAskedSlot）且首次出现候选值 "${candidate}"，转入确认流程而不是自动确认`);
         }
         firstConflict = { field: key, oldValue: null, newValue: candidate, reason: confirmationReason };
-      } else {
+      } else if (!SCENARIO_FOOD_CRAVING_REGEX.test(userText) && !BODY_HEALTH_CONCERN_REGEX.test(userText)) {
         queueConflict({ field: key, oldValue: null, newValue: candidate, reason: confirmationReason });
       }
       continue;
