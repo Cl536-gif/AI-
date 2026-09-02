@@ -236,6 +236,7 @@ async function processLangGraphConversation({
       persistenceRequest: { operationId: normalizedExternalTurn.operationId },
     } : {}),
     ...(isHomepageHandoff ? { lastAskedSlot: 'scene' } : {}),
+    emotionalSupportDeliveredThisTurn: false,
   };
 
   let result;

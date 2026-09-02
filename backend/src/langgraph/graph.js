@@ -66,6 +66,17 @@ function shouldRouteReturningUserToFollowUp(state) {
   return hasPersistedProfile && graphSlotsAreEmpty;
 }
 
+// 情绪命中轮确定性收口（情绪链刀1d 手术 F）：provideEmotionalSupport
+// 命中情绪并发出固定安抚文案后，本轮即告完成——不再进入 detectDirectQuestion
+// 及其后的模型节点。情绪固定文案已经覆盖「安抚 + 方向 + 陪伴」，模型再参与
+// 只会重复安慰（模型无法被提示词可靠禁止，见刀1c T2a 判挂）；确定性要覆盖
+// 整条回复链：固定话术答完，后续节点不能把球踢回给模型。
+// flag 由 langgraphConversationService 每轮 invoke input 强制清零（手术 C），
+// 故此边只在情绪真正命中的那一轮收口，不会跨轮误吞。
+function routeAfterEmotionalSupport(state) {
+  return state.emotionalSupportDeliveredThisTurn === true ? '__end__' : 'detectDirectQuestion';
+}
+
 function routeEntry(state) {
   if (state.initialLongTermPlanCommand) return 'clearInitialLongTermPlanCommand';
   if (state.planRevisionDraftCommand) {
@@ -178,7 +189,10 @@ const workflow = new StateGraph(DietState)
   .addNode('resolveCycleOnboarding', resolveCycleOnboarding)
   .addNode('generatePlan', generatePlan)
   .addEdge('__start__', 'provideEmotionalSupport')
-  .addEdge('provideEmotionalSupport', 'detectDirectQuestion')
+  .addConditionalEdges('provideEmotionalSupport', routeAfterEmotionalSupport, {
+    detectDirectQuestion: 'detectDirectQuestion',
+    __end__: '__end__',
+  })
   .addConditionalEdges('detectDirectQuestion', routeEntry, {
     answerDirectQuestion: 'answerDirectQuestion',
     resolvePendingConfirmation: 'resolvePendingConfirmation',
@@ -265,6 +279,7 @@ const graph = workflow.compile();
 module.exports = {
   graph,
   workflow,
+  routeAfterEmotionalSupport,
   routeEntry,
   routeAfterDirectQuestion,
   routeAfterServiceChoice,

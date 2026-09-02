@@ -164,7 +164,7 @@ function detectSafetySignalNeedingClarification(userText, restrictionsValue) {
   if (getNewRestrictionLabel(text, restrictionsValue)) return null;
 
   const signal = text.match(RESTRICTION_SAFETY_KEYWORD_REGEX)?.[0];
-  return signal || text.slice(0, 12);
+  return signal || null;
 }
 
 function buildSafetyClarificationQuestion(signal) {
@@ -551,6 +551,39 @@ async function askNextQuestion(state) {
   const slotLabel = SLOT_LABELS[nextSlot];
   const lastUserMessage = [...state.messages].reverse().find((m) => getMessageRole(m) === 'human');
   const lastUserText = lastUserMessage ? getMessageText(lastUserMessage) : '';
+
+  // 身体不适确定性出口（情绪链刀1c 手术 E）：用户当前消息在表达即时身体
+  // 不适时，采集确定性分支（cafeteriaMode 等）不得抢先消费——人不舒服时
+  // 教练不会追着问食堂自选还是套餐。真忌口声明（detectSafetySignal...
+  // 返回非空）仍优先走安全澄清，本出口不抢。
+  const hasHealthConcernText = BODY_HEALTH_CONCERN_REGEX.test(lastUserText);
+  const healthConcernSafetySignal = hasHealthConcernText
+    ? detectSafetySignalNeedingClarification(lastUserText, state.slots?.restrictions?.value)
+    : null;
+  if (hasHealthConcernText && !healthConcernSafetySignal) {
+    const healthConcernResponse = await model.invoke([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content:
+          '用户这一轮在表达身体上的不舒服（可能是吃了某样东西之后出现的）。这一轮唯一要做的是关心 TA 的身体：' +
+          '结合 TA 刚说的情况，给一两句具体、可执行的饮食方向（例如喝温水、吃清淡好消化的、暂停油腻辛辣刺激），' +
+          '并提醒持续不适或加重时及时就医。语气像一位关心 TA 的教练，自然、简短，不评判、不说教。\n' +
+          '【严格禁止】这一轮不向用户提任何问题（任何形式的确认、追问、信息收集都不行），' +
+          '不做与当下不适无关的饮食建档，不提前给完整饮食方案，也不重复空洞的安慰套话。\n' +
+          '回复以关心的陈述收尾即可，不需要以问句结束。',
+      },
+      ...state.messages,
+    ]);
+    const healthConcernReply = String(healthConcernResponse.content || '').trim();
+    return {
+      messages: [{ role: 'ai', content: healthConcernReply }],
+      lastAskedSlot: state.lastAskedSlot || nextSlot,
+      ...(state.resumePreviousQuestion ? { resumePreviousQuestion: false } : {}),
+      ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
+      ...(state.directQuestionAnsweredThisTurn ? { directQuestionAnsweredThisTurn: false } : {}),
+    };
+  }
 
   if (nextSlot === 'cafeteriaMode') {
     const resumeMessage = state.resumePreviousQuestion ? RESUME_PREVIOUS_QUESTION_MESSAGE : null;

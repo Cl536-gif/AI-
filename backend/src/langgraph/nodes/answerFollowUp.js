@@ -185,6 +185,10 @@ function buildFollowUpContextMessage(longTermContext) {
 
 async function answerFollowUp(state, { chatModel = model } = {}) {
   const userText = getMessageText(findLastUserMessage(state.messages)).trim();
+  // graph 的情绪命中轮已由手术 F 确定性收口，下面读取 flag、拦截分支和
+  // 条件 system 注入正常情况下不可达；这里保留作未来图结构调整时的纵深防御。
+  // 无条件的夹词防脑补注入仍是活代码，非情绪命中轮依赖它。
+  const emotionalSupportGiven = state.emotionalSupportDeliveredThisTurn === true;
   const hasLongTermAccess = state.longTermContext?.accessMode === 'long_term';
   if (hasLongTermAccess && EXECUTION_STATUS_QUESTION_REGEX.test(userText)) {
     return {
@@ -262,6 +266,7 @@ async function answerFollowUp(state, { chatModel = model } = {}) {
   }
 
   if (hasLongTermAccess &&
+      !emotionalSupportGiven &&
       DAILY_EXHAUSTION_REGEX.test(userText) &&
       !EXERCISE_CONTEXT_REGEX.test(userText)) {
     return {
@@ -304,6 +309,21 @@ async function answerFollowUp(state, { chatModel = model } = {}) {
         '结尾只轻轻确认替代是否可行，不要再问一遍原问题。不得使用“按原计划继续”“原计划”或“记录下来”等含糊说法。',
     }] : []),
     ...(longTermContextMessage ? [longTermContextMessage] : []),
+    ...(emotionalSupportGiven ? [{
+      role: 'system',
+      content:
+        '本轮回合开头，秘书已经针对用户的情绪发过一段安抚，用户现在需要的是实际问题上的回应。' +
+        '请直接回答用户的问题、继续了解必要情况或给出具体建议，' +
+        '绝对不要再输出任何安慰、共情或鼓励性话语，也不要重复或换说法复述刚才的安抚。',
+    }] : []),
+    {
+      role: 'system',
+      content:
+        '用户消息里偶尔会夹带个别英文单词、表情符号或看起来像打错的字。碰到这种情况，' +
+        '默认按字面意思理解并正常回应，不要因此推断用户有情绪、烦躁或不满。' +
+        '是否共情只看整句话是否在明确表达心理情绪（例如焦虑、崩溃、想放弃）：只有这种情况才先接住情绪，' +
+        '否则直接回应用户的实际内容。',
+    },
     ...state.messages,
   ]);
   const responseParts = isTemporaryFoodCraving
