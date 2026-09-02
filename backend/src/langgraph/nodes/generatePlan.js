@@ -191,6 +191,16 @@ async function generatePlan(state) {
         ? '方案要直接帮助用户搭配主食、菜和生活化分量，并给出窗口选菜时的实际做法。\n\n'
         : '方案要以窗口已经配好的整份套餐为前提，重点说明拿到套餐后怎么取舍、吃多少和如何替换，不能假设用户可以自由组合每一道菜。\n\n')
     : '';
+
+  const sceneValue = state.slots.scene?.value || '';
+  const sceneInstruction = sceneValue.includes('食堂') && sceneValue.includes('外卖')
+    ? '【用餐场景（两个区块都要覆盖，缺一不可）】用户食堂和外卖都会吃。方案必须分成' +
+      '两个区块：先给"在食堂吃"的完整做法（按第43条，食堂场景下每道菜都要带' +
+      '"如果食堂没有，换成XX"的替代方案）；再单列一个"点外卖时"区块，说明怎么选' +
+      '商家/菜品结构、下单备注怎么写、怎么避开高油高糖和隐藏热量。两个区块都要有' +
+      '具体内容，不能只写一个，也不能合并成一段混着说。\n\n'
+    : '';
+
   const serviceClosingInstruction =
     state.serviceTier === 'subscribed'
       ? '这版方案的结尾要明确告诉用户：先按这版试试看，不用一下子改得太多；' +
@@ -221,6 +231,7 @@ async function generatePlan(state) {
     '【忌口排除铁律】\n' +
     '生成方案（含所有主菜、配菜、替代方案）前，必须先检查用户档案中已声明的忌口/过敏/不耐受项。任何含有用户已声明忌口成分的菜品，必须整体排除：不得出现在主菜、配菜或任何替代方案中；也不得使用"少碰""挑出来不吃""避开里面的X"这类弱化表述来"补救"。忌口就是整体不出现，不存在"少吃一点"的版本。\n\n' +
     cafeteriaModeInstruction +
+    sceneInstruction +
     serviceClosingInstruction +
     (knowledgeSections.length > 0
       ? `可参考的知识库资料：\n${knowledgeSections.join('\n\n')}\n\n` +

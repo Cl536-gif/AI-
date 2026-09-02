@@ -215,7 +215,29 @@ function isBareLabelEcho(key, value) {
 const BARE_NUMBER_REGEX = /^\d+(\.\d+)?$/;
 const CAFETERIA_SCENE_EVIDENCE_REGEX = /(食堂|饭堂|打饭|校内(?:吃饭|就餐)|学校(?:里|内)(?:吃饭|就餐))/;
 const TAKEOUT_SCENE_EVIDENCE_REGEX = /(外卖|点餐|叫餐|送餐)/;
-const BOTH_SCENES_CONTEXT_ANSWER_REGEX = /^(?:两个|两种|这两个)?都(?:吃|有|可以|行)|^(?:换着|混着|穿插着|交替着)吃|^(?:食堂|饭堂)(?:和|跟|、)?外卖(?:都)?(?:吃|有)|^外卖(?:和|跟|、)?(?:食堂|饭堂)(?:都)?(?:吃|有)/;
+const BOTH_SCENES_CONTEXT_ANSWER_REGEX = /^(?:两个|两种|这两个|也)?都(?:会|了|也)?(?:吃|有|可以|行|用|点|去)|^(?:换着|混着|穿插着|交替着)吃|^(?:食堂|饭堂)(?:和|跟|、)?外卖(?:都)?(?:会)?(?:吃|有|用|点)|^外卖(?:和|跟|、)?(?:食堂|饭堂)(?:都)?(?:会)?(?:吃|有|用|点)/;
+
+// 场景证据必须是"肯定要去吃"的事实，不能只看词面出现——"食堂不去"、
+// "不吃外卖"这类否定句不是证据。子句级判定：任一分句里场景词与否定词
+// 同现即视为该分句否定该场景；只要有一个分句肯定该场景即算有正证据。
+// 采集兜底（applyDeterministicExplicitCandidates）与合理性校验
+// （isUnsupportedSceneGuess）共用同一判定，防止只改一道门、水从另一道流走。
+function hasPositiveSceneEvidence(text, sceneType) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  const clauses = raw
+    .split(/[，,。！？!?；;：:\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const evidenceRegex =
+    sceneType === 'cafeteria' ? CAFETERIA_SCENE_EVIDENCE_REGEX : TAKEOUT_SCENE_EVIDENCE_REGEX;
+  for (const clause of clauses) {
+    if (!evidenceRegex.test(clause)) continue;
+    if (/(不|没|别|不用|算了|免了|戒了)/.test(clause)) continue; // 否定句不构成正证据
+    return true;
+  }
+  return false;
+}
 
 function normalizeSceneFromContext({ userText, lastAskedSlot, extractedValue }) {
   const answer = String(userText || '')
@@ -232,12 +254,12 @@ function isUnsupportedSceneGuess(key, candidateValue, userText, lastAskedSlot) {
   const text = userText.trim();
   if (lastAskedSlot === 'scene' && BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(text)) return false;
   if (candidateValue.includes('食堂')) {
-    if (CAFETERIA_SCENE_EVIDENCE_REGEX.test(text)) return false;
+    if (hasPositiveSceneEvidence(text, 'cafeteria')) return false;
     if (lastAskedSlot === 'scene' && /^(学校|校内|学校吃|在学校吃)[。！!～~]?$/.test(text)) return false;
     return true;
   }
   if (candidateValue.includes('外卖')) {
-    return !TAKEOUT_SCENE_EVIDENCE_REGEX.test(text);
+    return !hasPositiveSceneEvidence(text, 'takeout');
   }
   return true;
 }
@@ -255,8 +277,17 @@ function applyDeterministicExplicitCandidates(extracted, userText) {
   const result = { ...extracted };
   const text = String(userText || '').trim();
 
-  if (/(食堂|饭堂)/.test(text)) result.scene = '食堂';
-  else if (/(点外卖|叫外卖|外卖)/.test(text)) result.scene = '外卖';
+  if (!result.scene) {
+    const likesCafeteria = hasPositiveSceneEvidence(text, 'cafeteria');
+    const likesTakeout = hasPositiveSceneEvidence(text, 'takeout');
+    if (likesCafeteria && likesTakeout) {
+      result.scene = '食堂和外卖都会吃';
+    } else if (likesCafeteria) {
+      result.scene = '食堂';
+    } else if (likesTakeout) {
+      result.scene = '外卖';
+    }
+  }
 
   if (/(食堂|饭堂)[^。！？\n]{0,15}(?:自选|自己挑|自由选)/.test(text)) result.cafeteriaMode = '自己挑菜';
   else if (/(食堂|饭堂)[^。！？\n]{0,15}(?:固定套餐|配好的套餐)/.test(text)) result.cafeteriaMode = '固定套餐';
@@ -466,4 +497,5 @@ module.exports = {
   isUnsupportedSceneGuess,
   applyDeterministicExplicitCandidates,
   normalizeSceneFromContext,
+  hasPositiveSceneEvidence,
 };
