@@ -102,6 +102,19 @@ async function resolveChoiceStage(state, pending) {
   }
 
   // unclear
+  // 本轮用户问的明确问题已由 answerDirectQuestion 单独回答
+  // （directQuestionAnsweredThisTurn=true）。此时判 unclear 只说明"这句
+  // 不是选服务"，不是"没听懂选择"——若走下面的 retry，会在条款答案后面
+  // 立刻补一句"没太听明白"，同一轮出现两份答案（MVP 测试图2）。参考
+  // resolveScheduleStage 的 deferred 挂起惯例（earlyBody 接住同理）：
+  // 把选择问题挂起到下一轮，本轮就此收口；flag 用后清零，防 checkpoint
+  // 跨轮泄漏导致下一轮真含糊也被误挂起。
+  if (state.directQuestionAnsweredThisTurn) {
+    return {
+      pendingServiceChoice: { ...pending, deferred: true },
+      directQuestionAnsweredThisTurn: false,
+    };
+  }
   if ((pending.askedCount || 0) >= MAX_ASK_COUNT) {
     if (process.env.LANGGRAPH_DEBUG) {
       // eslint-disable-next-line no-console
