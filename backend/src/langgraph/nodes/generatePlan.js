@@ -85,32 +85,171 @@ const UNSAFE_RESTRICTION_FALLBACK_TEXT = '这次生成的搭配没有通过忌�
 const MEAL_TIMING_CLOSING =
   '这份搭配适合午餐或晚餐；如果想安排早餐，告诉我，我会另外给你早餐方案～';
 
-function detectRestrictionPlanViolations(text, restrictions) {
-  const restrictionText = String(restrictions || '');
-  if (!restrictionText.includes('花生')) return [];
+const STRONG_RESTRICTION_SIGNALS = [
+  '过敏', '过敏史', '敏感', '不耐', '不耐受',
+  '吃了会', '喝了会', '一吃就', '一喝就', '吃完就', '喝完就', '拉肚子', '腹泻', '起疹', '发痒', '红肿',
+  '胃疼', '肚子疼', '恶心', '呕吐', '难受', '不舒服', '进急诊', '进医院', '挂急诊', '会出事', '会出人命',
+  '绝对不能', '绝对不', '千万别', '千万不', '碰不得', '不能碰', '吃不得', '会死',
+];
+const NEGATED_SIGNAL_PREFIXES = new Set(['不', '没', '别', '非']);
+const RESTRICTION_STOP_WORDS = new Set([
+  '那个', '这个', '它', '它们', '这些', '那些', '这种', '那种', '东西', '什么', '这样', '那样',
+]);
+const CATEGORY_MEMBERS = {
+  海鲜: ['虾', '蟹', '虾仁', '蛤蜊', '花蛤', '文蛤', '蛏子', '扇贝', '干贝', '生蚝', '牡蛎', '青口', '海虹', '鱿鱼', '章鱼', '八爪鱼', '墨鱼', '乌贼', '海参', '鲍鱼', '带子'],
+  海鲜类: ['虾', '蟹', '虾仁', '蛤蜊', '花蛤', '文蛤', '蛏子', '扇贝', '干贝', '生蚝', '牡蛎', '青口', '海虹', '鱿鱼', '章鱼', '八爪鱼', '墨鱼', '乌贼', '海参', '鲍鱼', '带子'],
+  海产品: ['虾', '蟹', '虾仁', '蛤蜊', '花蛤', '文蛤', '蛏子', '扇贝', '干贝', '生蚝', '牡蛎', '青口', '海虹', '鱿鱼', '章鱼', '八爪鱼', '墨鱼', '乌贼', '海参', '鲍鱼', '带子'],
+  水产: ['虾', '蟹', '虾仁', '蛤蜊', '花蛤', '文蛤', '蛏子', '扇贝', '干贝', '生蚝', '牡蛎', '青口', '海虹', '鱿鱼', '章鱼', '八爪鱼', '墨鱼', '乌贼', '海参', '鲍鱼', '带子'],
+  坚果: ['花生', '腰果', '核桃', '杏仁', '开心果', '榛子', '松子', '夏威夷果', '碧根果', '巴旦木', '瓜子'],
+  坚果类: ['花生', '腰果', '核桃', '杏仁', '开心果', '榛子', '松子', '夏威夷果', '碧根果', '巴旦木', '瓜子'],
+  干果: ['花生', '腰果', '核桃', '杏仁', '开心果', '榛子', '松子', '夏威夷果', '碧根果', '巴旦木', '瓜子'],
+  奶制品: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+  乳制品: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+  奶类: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+  乳类: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+  牛奶: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+  乳糖: ['牛奶', '牛乳', '酸奶', '奶酪', '乳酪', '芝士', '起司', '黄油', '奶油', '炼乳', '奶粉', '奶昔', '奶茶', '奶盖'],
+};
+// 鱼族不并入海鲜；也不使用单字“贝”或“奶”，避免误伤鱼香肉丝、贝贝南瓜、椰奶和豆奶。
+const HIDDEN_DISH_PATTERNS = {
+  花生: ['宫保鸡丁', '宫爆鸡丁', '老醋花生'],
+  芒果: ['杨枝甘露'],
+};
 
+function hasStrongRestrictionSignal(sentence) {
+  return STRONG_RESTRICTION_SIGNALS.some((signal) => {
+    let fromIndex = 0;
+    while (fromIndex < sentence.length) {
+      const index = sentence.indexOf(signal, fromIndex);
+      if (index === -1) return false;
+      if (!NEGATED_SIGNAL_PREFIXES.has(sentence[index - 1])) return true;
+      fromIndex = index + signal.length;
+    }
+    return false;
+  });
+}
+
+function hasExplicitCannotConsumeSignal(sentence) {
+  // 兼容既有 A8“不能吃花生”安全语义；不把“不吃香菜/辣”这类偏好升级为 HARD。
+  return /(?:不能吃|不能喝)/.test(sentence);
+}
+
+function splitFoodWords(value) {
+  return String(value || '')
+    .split(/和|与|跟|、/)
+    .map((word) => word.trim().replace(/^(?:对于|对)/, '').replace(/^(?:吃|喝)/, ''))
+    .filter((word) => word && !RESTRICTION_STOP_WORDS.has(word));
+}
+
+function extractRestrictionFoodWords(sentence) {
+  const words = [];
+  const patterns = [
+    /(?:对|对于)([^，。；、\s！？!?]{1,8})(?:过敏|过敏史|敏感|不耐|不耐受)/g,
+    /([^，。；、\s！？!?]{1,8})(?:过敏|过敏史|敏感|不耐|不耐受)/g,
+    /(?:不能|不吃|不喝|别吃|别喝)([^，。；、\s！？!?]{1,8})/g,
+    /([^，。；、\s！？!?]{1,8})(?:吃不得|碰不得)/g,
+    /(?:还需|需要|也要|记得|得)避开([^，。；、\s！？!?]{1,8})/g,
+    /(?:上次)?(?:吃|喝)(?!了(?:会|就|拉肚子|腹泻|起疹|发痒|红肿|胃疼|肚子疼|恶心|呕吐|难受|不舒服|进急诊|进医院|挂急诊|过敏))([^，。；、\s！？!?]{1,6}?)(?:了|完|过)?(?:会|就|完就|之后|后|完)?(?:拉肚子|腹泻|起疹|发痒|红肿|胃疼|肚子疼|恶心|呕吐|难受|不舒服|进急诊|进医院|挂急诊|过敏)/g,
+    /([^，。；、\s！？!?]{1,6})(?:吃|喝)(?:了|完|过)?(?:会|就|完就|之后|后|完)?(?:拉肚子|腹泻|起疹|发痒|红肿|胃疼|肚子疼|恶心|呕吐|难受|不舒服|进急诊|进医院|挂急诊|过敏)/g,
+    /一(?:吃|喝)([^，。；、\s！？!?]{1,8})就(?:过敏|拉肚子|起疹|恶心|呕吐|难受|不舒服|胃疼|肚子疼|进急诊|进医院)/g,
+  ];
+  patterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(sentence))) words.push(...splitFoodWords(match[1]));
+  });
+  return [...new Set(words)];
+}
+
+function getRestrictionCheckContext(restrictions) {
+  const anchors = [];
+  String(restrictions || '')
+    .split(/[。！？!?\n]+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .forEach((sentence) => {
+      if (!hasStrongRestrictionSignal(sentence) && !hasExplicitCannotConsumeSignal(sentence)) return;
+      extractRestrictionFoodWords(sentence).forEach((word) => {
+        if (!anchors.includes(word)) anchors.push(word);
+      });
+    });
+
+  const checkTerms = [...anchors];
+  anchors.forEach((word) => {
+    const categoryKey = Object.keys(CATEGORY_MEMBERS).find((key) => word === key || word.startsWith(key));
+    if (categoryKey) checkTerms.push(...CATEGORY_MEMBERS[categoryKey]);
+  });
+  [...checkTerms].forEach((term) => {
+    if (HIDDEN_DISH_PATTERNS[term]) checkTerms.push(...HIDDEN_DISH_PATTERNS[term]);
+  });
+  return { anchors, checkTerms: [...new Set(checkTerms)] };
+}
+
+function hasUnsafeTermOccurrence(planBody, term) {
+  return String(planBody || '').split(/[。！？!?\n；;]+/).some((clause) => {
+    let fromIndex = 0;
+    while (fromIndex < clause.length) {
+      const index = clause.indexOf(term, fromIndex);
+      if (index === -1) return false;
+      const prefix = clause.slice(0, index);
+      const suffix = clause.slice(index + term.length, index + term.length + 5);
+      const lastExclusion = Math.max(
+        prefix.lastIndexOf('不含'), prefix.lastIndexOf('没有'), prefix.lastIndexOf('不放'),
+        prefix.lastIndexOf('完全避开'), prefix.lastIndexOf('排除')
+      );
+      if (lastExclusion === -1 && !/^(?:[^。！？!?\n]{0,4})(?:不含|不放|完全避开)/.test(suffix)) return true;
+      fromIndex = index + term.length;
+    }
+    return false;
+  });
+}
+
+function isHiddenDishPattern(term) {
+  return Object.values(HIDDEN_DISH_PATTERNS).some((patterns) => patterns.includes(term));
+}
+
+function detectRestrictionPlanViolations(text, restrictions) {
   const value = String(text || '');
   const firstParagraphEnd = value.search(/\n{2,}/);
   const planBody = firstParagraphEnd === -1 ? value : value.slice(firstParagraphEnd).trim();
+  const { anchors, checkTerms } = getRestrictionCheckContext(restrictions);
+  if (anchors.length === 0) return [];
+
   const violations = [];
-  const peanutDish = planBody.match(/宫保鸡丁|宫爆鸡丁|花生酱|花生碎|花生米|老醋花生/);
-  if (peanutDish) violations.push(`方案正文出现含花生菜品或成分“${peanutDish[0]}”`);
-  const weakAvoidance = planBody.match(/(?:少碰|少吃|挑出来不吃|挑出(?:来)?)[^。！？\n]{0,12}花生|避开[^。！？\n]{0,12}(?:花生|带花生)/);
-  if (weakAvoidance) violations.push(`方案正文用弱化表述处理花生忌口：“${weakAvoidance[0]}”`);
-  if (!/(?:不含|没有|不放|完全避开)[^。！？\n]{0,4}花生|花生[^。！？\n]{0,4}(?:不含|不放|完全避开)/.test(planBody)) {
-    violations.push('方案正文没有明确说明主菜、配菜和替代方案均不含花生');
+  checkTerms.forEach((term) => {
+    // 隐形成分菜名不能靠否定式提及“补救”；命中即整道菜排除。
+    if ((isHiddenDishPattern(term) && planBody.includes(term)) || hasUnsafeTermOccurrence(planBody, term)) {
+      violations.push(`方案正文出现含忌口成分的菜品或成分“${term}”`);
+    }
+    const weakPattern = new RegExp(
+      `(?:少碰|少吃|挑出来不吃|挑出(?:来)?)[^。！？\\n]{0,12}${term}|避开[^。！？\\n]{0,12}(?:${term}|带${term})`
+    );
+    const weakAvoidance = planBody.match(weakPattern);
+    if (weakAvoidance) violations.push(`方案正文用弱化表述处理${term}忌口：“${weakAvoidance[0]}”`);
+  });
+  anchors.forEach((anchor) => {
+    const declarationPattern = new RegExp(
+      `(?:不含|没有|不放|完全避开)[^。！？\\n]{0,4}${anchor}|${anchor}[^。！？\\n]{0,4}(?:不含|不放|完全避开)`
+    );
+    if (!declarationPattern.test(planBody)) {
+      violations.push(`方案正文没有明确说明主菜、配菜和替代方案均不含${anchor}`);
+    }
+  });
+  if (process.env.LANGGRAPH_DEBUG) {
+    // eslint-disable-next-line no-console
+    console.log(`[generatePlan] 忌口硬校验 anchors=${JSON.stringify(anchors)} checkTerms=${JSON.stringify(checkTerms)} violations=${JSON.stringify(violations)}`);
   }
   return violations;
 }
 
-function buildPeanutSafeFallbackPlan(slots) {
+function buildSafeFallbackPlan(slots, anchors, checkTerms) {
   const summary = SLOT_KEYS.map((key) => `${SLOT_LABELS[key]}：${slots[key].value}`).join('、');
+  const checked = checkTerms.filter((term) => !isHiddenDishPattern(term)).join('、');
   return (
     `好，按你已经确认的情况：${summary}。\n\n` +
-    '先从今天这一顿开始：主食选半碗米饭，大约一拳大小；蛋白质选一份经窗口明确确认不含任何花生成分的番茄炒蛋，' +
-    '如果没有，就换成同样经窗口确认完全不含花生的一份清蒸鸡腿；蔬菜选一份明确不含花生的清炒青菜，没有的话换成同样不含花生的清炒包菜。' +
-    '主菜、配菜、替代和调味都必须完整排除花生；窗口不能确认成分时，这道菜就不选。想保留辣味，也只选窗口明确确认不含花生及花生制品的辣椒调味。\n\n' +
-    '先按这版试试看，不用一下子改得太多；如果吃完仍然觉得饿，晚一点可以加一个水煮蛋，不用硬扛，有问题可以再来问。'
+    `先从今天这一顿开始：主食选半碗米饭，大约一拳大小；蛋白质选一份经窗口明确确认完全不含${checked}任何成分的菜，` +
+    `成分简单的优先，窗口不能确认成分时这道菜就不选；蔬菜选一份同样经窗口确认完全不含${checked}任何成分的菜；` +
+    `主菜、配菜、替代和调味都必须完整排除${checked}。\n\n` +
+    '先按这版试试看，不用一下子改得太多；如果吃完仍然觉得饿，晚一点可以适当加一点，不用硬扛，有问题可以再来问。'
   );
 }
 
@@ -321,6 +460,7 @@ async function generatePlan(state) {
     );
   }
 
+  const { anchors, checkTerms } = getRestrictionCheckContext(state.slots.restrictions?.value);
   let restrictionViolations = detectRestrictionPlanViolations(
     strippedReplyText,
     state.slots.restrictions?.value
@@ -330,16 +470,18 @@ async function generatePlan(state) {
     // eslint-disable-next-line no-await-in-loop
     strippedReplyText = await generateRawPlan(
       '【忌口安全重试】上一次方案没有通过忌口安全检查：' +
-      restrictionViolations.join('；') + '。必须重新生成整份方案，主菜、配菜和替代方案都完全排除花生及含花生菜品；' +
-      '不得再出现宫保鸡丁，也不得用“少碰”“挑出来不吃”“避开里面的花生”补救。替代菜品要明确说明不含花生。'
+      restrictionViolations.join('；') +
+      `。必须重新生成整份方案，主菜、配菜和替代方案都完全排除${checkTerms.join('、')}及含其成分的菜品；` +
+      '不得再出现含上述任何忌口成分的菜品，也不得用“少碰”“挑出来不吃”“避开里面的X”这类弱化表述补救。' +
+      `替代菜品要明确说明不含${anchors.join('、')}。`
     );
     restrictionViolations = detectRestrictionPlanViolations(
       strippedReplyText,
       state.slots.restrictions?.value
     );
   }
-  if (restrictionViolations.length > 0 && String(state.slots.restrictions?.value || '').includes('花生')) {
-    strippedReplyText = buildPeanutSafeFallbackPlan(state.slots);
+  if (anchors.length > 0 && restrictionViolations.length > 0) {
+    strippedReplyText = buildSafeFallbackPlan(state.slots, anchors, checkTerms);
     restrictionViolations = detectRestrictionPlanViolations(
       strippedReplyText,
       state.slots.restrictions?.value
@@ -423,4 +565,5 @@ module.exports = {
   normalizeMealTimingClosing,
   hasConcreteMealPlanContent,
   buildSleepSkeletonSection,
+  detectRestrictionPlanViolations,
 };
