@@ -12,11 +12,13 @@ const SLOT_LABELS = {
   goal: '身材目标',
   exercise: '是否运动',
   cafeteriaMode: '食堂打饭方式（自己挑菜/固定套餐）',
+  wakeTime: '作息-起床时间',
+  stayUpLate: '作息-熬夜情况',
 };
 
 // 六项核心信息之外，额外保存会直接影响方案落地方式的后台信息。
 // cafeteriaMode 不参与“六项复述”，但食堂场景下必须确认后才能出方案。
-const TRACKED_SLOT_KEYS = [...SLOT_KEYS, 'cafeteriaMode'];
+const TRACKED_SLOT_KEYS = [...SLOT_KEYS, 'cafeteriaMode', 'wakeTime', 'stayUpLate'];
 
 function createEmptySlot() {
   return { value: null, confirmed: false };

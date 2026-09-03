@@ -80,6 +80,30 @@ const extractionSchema = z.object({
         '（比如把"不运动"简化成只存"运动"，意思会正好相反）。如果这一轮消息' +
         '完全没涉及这个信息，填 null。'
     ),
+  wakeTime: z
+    .string()
+    .nullable()
+    .describe(
+      '这一轮用户消息里新提供的"作息-起床时间"信息（后台作息字段，不参与六项复述）。' +
+        '指用户习惯性的起床时点或起床习惯，必须用完整的、自带"习惯"语义的说法记录' +
+        '（比如"经常赖床到十点左右起床""一般七点起""早上起不来，经常睡到快中午才起"）。' +
+        '只提取习惯性、规律性的作息表述（整句描述日常起床规律，或带"经常/一般/平时/每天/' +
+        '总是/老是/习惯/常常/通常"这类频率含义）；如果只是在说某一天/某一次的具体起床' +
+        '（比如"今天睡到下午两点""今早七点起的"），那是单次事件不是长期习惯，必须填 null。' +
+        '完全不涉及起床时间时同样填 null，不能因为"睡得晚所以一定起得晚"这类推测自行编造。' +
+        '中午午休、周末安排、入睡时刻规律这类内容不属于本字段，填 null。'
+    ),
+  stayUpLate: z
+    .string()
+    .nullable()
+    .describe(
+      '这一轮用户消息里新提供的"作息-熬夜情况"信息（后台作息字段，不参与六项复述）。' +
+        '指用户习惯性的入睡时点/晚睡程度，必须用完整的、自带语义的说法记录' +
+        '（比如"晚上经常搞到两点才睡""经常熬夜到凌晨一点""一般十一点前就睡了，不熬夜"）。' +
+        '只提取习惯性、规律性的表述（带"经常/一般/平时/每天/总是/老是/习惯/常常/通常"等' +
+        '频率含义，或整句描述日常入睡规律）；单次事件（"昨晚熬夜了""昨天三点才睡"）必须填 null。' +
+        '完全不涉及入睡/熬夜时填 null；中午午休这类内容不属于本字段，填 null。'
+    ),
 });
 
 const structuredModel = classifierModel.withStructuredOutput(extractionSchema, {
@@ -92,6 +116,28 @@ const VAGUE_RESTRICTION_ANSWER_REGEX = /^(不知道|不清楚|想不到|没有�
 const VAGUE_GOAL_ANSWER_REGEX = /^(不知道|不清楚|想不到|没有想好|没想好|没有|没什么|随便|都行)$/;
 const GENERIC_CONFIRMATION_ANSWER_REGEX = /^(?:是的?|对(?:的)?|嗯+|哦+|好(?:的)?|可以|没错|yes|yep|yeah)[呀啊哈呢吧嘛～~！!。.]?$/i;
 const EMOJI_ONLY_REGEX = /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji_Modifier}|\uFE0F|\u200D|\s)+$/u;
+// 作息语义判定常量（单一来源，conflictRouter 引用本文件导出，禁止在别处重抄）
+const SLEEP_HABIT_REGEX = /(经常|一般|平时|每天|总是|老是|常常|习惯|通常)/;
+const SLEEP_SINGLE_EVENT_REGEX = /(今天|昨天|昨晚|昨夜|前天|今早|这次|这两天|最近)/;
+const WAKE_CORE_REGEX = /(起床|赖床|起不来|几点起|几点醒|睡到|睡懒觉|早起|晚起)/;
+const STAYUP_CORE_REGEX = /(熬夜|通宵|凌晨|晚睡|睡得晚|睡得很晚|几点睡|才睡|点睡)/;
+
+function sleepSemanticsIn(userText) {
+  const text = String(userText || '').trim();
+  const hasHabit = SLEEP_HABIT_REGEX.test(text);
+  const hasSingleEvent = SLEEP_SINGLE_EVENT_REGEX.test(text);
+  const wakeAllowed = WAKE_CORE_REGEX.test(text) && (hasHabit || !hasSingleEvent);
+  const stayUpAllowed = STAYUP_CORE_REGEX.test(text) && (hasHabit || !hasSingleEvent);
+  return { wakeAllowed, stayUpAllowed, hasHabit, hasSingleEvent };
+}
+
+function gateSleepCandidates(extracted, userText) {
+  const result = { ...extracted };
+  const { wakeAllowed, stayUpAllowed } = sleepSemanticsIn(userText);
+  if (!wakeAllowed) result.wakeTime = null;
+  if (!stayUpAllowed) result.stayUpLate = null;
+  return result;
+}
 const GOAL_NORMALIZATION_RULES = [
   { regex: /^(精气神|有精气神|更有精气神|精神点|更精神)$/, value: '希望更有精气神' },
   { regex: /^(不犯困|少犯困|没那么困|精力好|精力充沛)$/, value: '希望精力更稳定、不容易犯困' },
@@ -196,6 +242,8 @@ const BARE_LABEL_BLOCKLIST = {
   goal: ['身材目标', '目标', '身材'],
   exercise: ['运动', '是否运动', '运动情况'],
   cafeteriaMode: ['打饭方式', '食堂打饭方式'],
+  wakeTime: ['起床时间', '作息时间', '作息'],
+  stayUpLate: ['熬夜情况', '是否熬夜', '作息'],
 };
 
 function isBareLabelEcho(key, value) {
@@ -315,6 +363,24 @@ function applyDeterministicExplicitCandidates(extracted, userText) {
   const taste = text.match(/(?:喜欢吃?|爱吃|偏爱|偏好)([^，,。！？\n]{1,24})/);
   if (taste) result.taste = `喜欢${taste[1].trim()}`;
 
+  // 作息补抽（v2 收口版）：优先保留同时带习惯词和作息核词的原话分句，
+  // 避免模型候选缩水成"上午10点"，也避免先取到同句中的"早上起不来"残句。
+  const { wakeAllowed, stayUpAllowed } = sleepSemanticsIn(text);
+  const clauses = text.split(/[，,。！？!?；;：:\n]+/).map((s) => s.trim());
+  const findHabitualClause = (coreRegex) =>
+    clauses.find((clause) => coreRegex.test(clause) && SLEEP_HABIT_REGEX.test(clause) && clause.length <= 40) ||
+    clauses.find((clause) => coreRegex.test(clause) && clause.length <= 40);
+  const wakeMissing = !result.wakeTime || !WAKE_CORE_REGEX.test(String(result.wakeTime || ''));
+  if (wakeMissing && wakeAllowed) {
+    const wakeClause = findHabitualClause(WAKE_CORE_REGEX);
+    if (wakeClause) result.wakeTime = wakeClause;
+  }
+  const stayUpMissing = !result.stayUpLate || !STAYUP_CORE_REGEX.test(String(result.stayUpLate || ''));
+  if (stayUpMissing && stayUpAllowed) {
+    const stayUpClause = findHabitualClause(STAYUP_CORE_REGEX);
+    if (stayUpClause) result.stayUpLate = stayUpClause;
+  }
+
   return result;
 }
 
@@ -355,7 +421,7 @@ async function extractSlots(state) {
       role: 'system',
       content:
         '你是一个信息抽取助手，任务是从用户这一轮说的话里，判断六项核心饮食信息' +
-        '（就餐场景、口味偏好、预算、忌口/过敏、身材目标、是否运动），以及食堂' +
+        '（就餐场景、口味偏好、预算、忌口/过敏、身材目标、是否运动），以及后台作息信息（起床时间、熬夜情况）和食堂' +
         '场景下额外的打饭方式里，哪些在这一轮有新信息。只抽取"这一轮用户实际' +
         '提供了什么"，不要替用户编造，' +
         '也不要把已经确认过的旧信息重复填一遍（除非用户这一轮明确又提了一次）。\n\n' +
@@ -431,6 +497,7 @@ async function extractSlots(state) {
     extractedValue: extracted.taste,
   });
   extracted.taste = normalizedTaste.value;
+  extracted = gateSleepCandidates(extracted, userText);
 
   const candidateSlots = {};
   const candidateConfirmationReasons = {};
@@ -498,4 +565,11 @@ module.exports = {
   applyDeterministicExplicitCandidates,
   normalizeSceneFromContext,
   hasPositiveSceneEvidence,
+  isBareLabelEcho,
+  gateSleepCandidates,
+  sleepSemanticsIn,
+  SLEEP_HABIT_REGEX,
+  SLEEP_SINGLE_EVENT_REGEX,
+  WAKE_CORE_REGEX,
+  STAYUP_CORE_REGEX,
 };

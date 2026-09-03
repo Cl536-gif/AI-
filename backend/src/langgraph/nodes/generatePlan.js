@@ -133,6 +133,33 @@ function normalizeMealTimingClosing(text) {
   return `${withoutDuplicateBreakfastPrompt}\n\n${MEAL_TIMING_CLOSING}`.trim();
 }
 
+// —— A2 v2 消费端：作息骨架确定性段 ——
+// 作息适配从"模型任务"改为"代码确定性拼接"（v1 判挂：作息指令进 prompt 后
+// 模型消费呈概率性，场景 A 第 1 遍有效复跑 0 命中）。
+// 只在用户已确认作息（confirmed 且值非空）时产出非空段；值=用户原话自明分句，
+// 以"你<value>"直插（值不自明会导致此处不通顺——由 extractSlots §三.4 收口保证）。
+// 段内容=营养通识层模板（第一餐顺延原则 + 深夜饥饿清淡应对），不含场景特化数字。
+// 拼在 normalizeMealTimingClosing 之后（§五.2），不经过模型、不经过 formatGuard，
+// 属确定性通道，逐字可探针（S1-S5）。
+function buildSleepSkeletonSection(slots) {
+  const wakeValue =
+    slots.wakeTime && slots.wakeTime.confirmed ? String(slots.wakeTime.value || '').trim() : '';
+  const stayUpValue =
+    slots.stayUpLate && slots.stayUpLate.confirmed ? String(slots.stayUpLate.value || '').trim() : '';
+  const clauses = [];
+  if (wakeValue) {
+    clauses.push(
+      '你' + wakeValue + '，起床后的第一餐按你实际醒来的时间顺延安排就行，不用硬卡常规早餐的点'
+    );
+  }
+  if (stayUpValue) {
+    clauses.push(
+      '你' + stayUpValue + '，深夜到凌晨如果饿了，优先吃清淡好消化的，比如一小杯温牛奶、几颗原味坚果或半根香蕉，别硬扛也别吃油腻重口的宵夜'
+    );
+  }
+  return clauses.length > 0 ? '\n\n（按你的作息补充一句：' + clauses.join('；') + '。）' : '';
+}
+
 function hasConcreteMealPlanContent(text) {
   const value = String(text || '').trim();
   if (value.length < MIN_PLAN_LENGTH) return false;
@@ -325,7 +352,9 @@ async function generatePlan(state) {
   const isPlanUnsafe = restrictionViolations.length > 0;
   const replyText = isPlanUnsafe
     ? UNSAFE_RESTRICTION_FALLBACK_TEXT
-    : (isPlanMissing ? NO_PLAN_FALLBACK_TEXT : normalizeMealTimingClosing(strippedReplyText));
+    : isPlanMissing
+      ? NO_PLAN_FALLBACK_TEXT
+      : normalizeMealTimingClosing(strippedReplyText) + buildSleepSkeletonSection(state.slots);
 
   if (process.env.LANGGRAPH_DEBUG && isPlanMissing) {
     // eslint-disable-next-line no-console
@@ -393,4 +422,5 @@ module.exports = {
   MEAL_TIMING_CLOSING,
   normalizeMealTimingClosing,
   hasConcreteMealPlanContent,
+  buildSleepSkeletonSection,
 };

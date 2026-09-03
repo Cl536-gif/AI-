@@ -8,6 +8,7 @@ const { classifierModel } = require('../model');
 const { SLOT_LABELS, TRACKED_SLOT_KEYS } = require('../state');
 const { getMessageText, findLastUserMessage } = require('../utils/messages');
 const { recognizeDish } = require('../../data/commonDishCatalog');
+const { sleepSemanticsIn } = require('./extractSlots');
 
 // fix4c-2：与 askNextQuestion.js 中同名字段保持一致（两处需同步维护）——
 // 命中"具体场景食物诉求/健康诉求"的输入，不转入确认流程，交给模型路径接住诉求
@@ -62,6 +63,10 @@ function hasExplicitFirstValueEvidence(field, userText) {
       return /(不运动|没运动|运动|跑步|健身|力量训练|打球|攀岩|游泳|骑车|瑜伽|普拉提|走路|散步)/.test(text);
     case 'taste':
       return /(喜欢吃?|爱吃|偏爱|偏好|口味[^。！？\n]{0,8}(?:辣|甜|酸|咸|清淡|重口))/.test(text);
+    case 'wakeTime':
+      return sleepSemanticsIn(userText).wakeAllowed;
+    case 'stayUpLate':
+      return sleepSemanticsIn(userText).stayUpAllowed;
     default:
       return false;
   }
