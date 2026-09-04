@@ -13,7 +13,7 @@ const { sleepSemanticsIn } = require('./extractSlots');
 // fix4c-2：与 askNextQuestion.js 中同名字段保持一致（两处需同步维护）——
 // 命中"具体场景食物诉求/健康诉求"的输入，不转入确认流程，交给模型路径接住诉求
 const SCENARIO_FOOD_CRAVING_REGEX = /想吃|想喝|馋|去吃|吃顿|来顿|炫|干饭|火锅|烧烤|炸鸡|奶茶|麻辣烫|烤肉|螺蛳粉|蛋糕|甜品|炸串|关东煮/;
-const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胀气|口气|溃疡/;
+const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胃痛|胃不舒服|胀气|腹胀|拉肚子|腹泻|肚子疼|反胃|恶心|呕吐|起疹|发痒|口气|溃疡/;
 
 const ClassificationSchema = z.object({
   classification: z

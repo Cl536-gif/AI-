@@ -263,7 +263,9 @@ function isBareLabelEcho(key, value) {
 const BARE_NUMBER_REGEX = /^\d+(\.\d+)?$/;
 const CAFETERIA_SCENE_EVIDENCE_REGEX = /(食堂|饭堂|打饭|校内(?:吃饭|就餐)|学校(?:里|内)(?:吃饭|就餐))/;
 const TAKEOUT_SCENE_EVIDENCE_REGEX = /(外卖|点餐|叫餐|送餐)/;
-const BOTH_SCENES_CONTEXT_ANSWER_REGEX = /^(?:两个|两种|这两个|也)?都(?:会|了|也)?(?:吃|有|可以|行|用|点|去)|^(?:换着|混着|穿插着|交替着)吃|^(?:食堂|饭堂)(?:和|跟|、)?外卖(?:都)?(?:会)?(?:吃|有|用|点)|^外卖(?:和|跟|、)?(?:食堂|饭堂)(?:都)?(?:会)?(?:吃|有|用|点)/;
+const BOTH_SCENES_CONTEXT_ANSWER_REGEX = /(?:两个|两种|这两个|也)?都(?:会|了|也)?(?:吃|有|可以|行|用|点|去)|(?:换着|混着|穿插着|交替着)吃|(?:食堂|饭堂|外卖)(?:和|跟|、)?(?:食堂|饭堂|外卖)(?:(?:两个|两种)?都)?(?:会|也)?(?:吃|有|用|点|去|订|叫)/;
+const SCENE_QUESTION_REGEX = /[？?]|(?:哪|还是|怎么)/;
+const AFFIRMATIVE_DINING_ACTION_REGEX = /(?:吃|点|去|订|叫)(?:饭|餐|外卖)?/;
 
 // 场景证据必须是"肯定要去吃"的事实，不能只看词面出现——"食堂不去"、
 // "不吃外卖"这类否定句不是证据。子句级判定：任一分句里场景词与否定词
@@ -287,11 +289,31 @@ function hasPositiveSceneEvidence(text, sceneType) {
   return false;
 }
 
+// 两个场景都有明确的正向进食证据时，确定性结果应覆盖模型
+// 偶发的单场景漏抽。不能只按“食堂/外卖”词面共现：比较问句或只是
+// 谈论两个场景，都不等于用户亲口说自己两个都吃。
+function forceBothSceneIfEvidence(extracted, userText) {
+  const result = { ...extracted };
+  const text = String(userText || '').trim();
+  if (!text || SCENE_QUESTION_REGEX.test(text) || !AFFIRMATIVE_DINING_ACTION_REGEX.test(text)) {
+    return result;
+  }
+  const likesCafeteria = hasPositiveSceneEvidence(text, 'cafeteria');
+  const likesTakeout = hasPositiveSceneEvidence(text, 'takeout');
+  if (likesCafeteria && likesTakeout) result.scene = '食堂和外卖都会吃';
+  return result;
+}
+
 function normalizeSceneFromContext({ userText, lastAskedSlot, extractedValue }) {
-  const answer = String(userText || '')
+  const raw = String(userText || '');
+  const answer = raw
     .replace(/^[，,。！？!?；;：:\s]+|[，,。！？!?；;：:\s]+$/g, '')
     .trim();
-  if (lastAskedSlot === 'scene' && BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(answer)) {
+  if (
+    lastAskedSlot === 'scene' &&
+    !SCENE_QUESTION_REGEX.test(raw) &&
+    BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(answer)
+  ) {
     return '食堂和外卖都会吃';
   }
   return extractedValue;
@@ -300,6 +322,7 @@ function normalizeSceneFromContext({ userText, lastAskedSlot, extractedValue }) 
 function isUnsupportedSceneGuess(key, candidateValue, userText, lastAskedSlot) {
   if (key !== 'scene') return false;
   const text = userText.trim();
+  if (SCENE_QUESTION_REGEX.test(text)) return true;
   if (lastAskedSlot === 'scene' && BOTH_SCENES_CONTEXT_ANSWER_REGEX.test(text)) return false;
   if (candidateValue.includes('食堂')) {
     if (hasPositiveSceneEvidence(text, 'cafeteria')) return false;
@@ -471,6 +494,7 @@ async function extractSlots(state) {
 
   let extracted = await structuredModel.invoke(prompt);
   extracted = applyDeterministicExplicitCandidates(extracted, userText);
+  extracted = forceBothSceneIfEvidence(extracted, userText);
   extracted.scene = normalizeSceneFromContext({
     userText,
     lastAskedSlot: state.lastAskedSlot,
@@ -563,6 +587,7 @@ module.exports = {
   normalizeExerciseFromContext,
   isUnsupportedSceneGuess,
   applyDeterministicExplicitCandidates,
+  forceBothSceneIfEvidence,
   normalizeSceneFromContext,
   hasPositiveSceneEvidence,
   isBareLabelEcho,

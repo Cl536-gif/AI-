@@ -77,7 +77,9 @@ const UNKNOWN_AI_COMPARISON_REGEX =
 // fix4c：带具体场景的食物诉求（如"今晚想吃火锅"）——不得被采集漏斗吞成确认句
 const SCENARIO_FOOD_CRAVING_REGEX = /想吃|想喝|馋|去吃|吃顿|来顿|炫|干饭|火锅|烧烤|炸鸡|奶茶|麻辣烫|烤肉|螺蛳粉|蛋糕|甜品|炸串|关东煮/;
 // fix4c：非体重健康诉求（如"长痘想调理"）——接住诉求，不硬拉回减重采集
-const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胀气|口气|溃疡/;
+const BODY_HEALTH_CONCERN_REGEX = /长痘|痘痘|皮肤|上火|炎症|湿疹|过敏(?![；;，,。]|$)|失眠|便秘|脱发|痛经|肠胃|胃疼|胃痛|胃不舒服|胀气|腹胀|拉肚子|腹泻|肚子疼|反胃|恶心|呕吐|起疹|发痒|口气|溃疡/;
+const ALLERGY_REACTION_REGEX = /(?:对[^，,。！？\n]{1,16}过敏|(?:吃|喝)[^，,。！？\n]{0,16}(?:过敏|起疹|发痒)|起疹|皮肤发痒)/;
+const GASTROINTESTINAL_REACTION_REGEX = /(?:胀气|腹胀|拉肚子|腹泻|肚子疼|胃疼|胃痛|胃不舒服|肠胃不舒服|反胃|恶心|呕吐)/;
 const REMINDER_QUESTION_REGEX = /(提醒|推送|定时|通知).*(吗|嘛|么|能不能|可以)|能不能.*(提醒|推送)|可以.*(提醒|推送)/;
 const SERVICE_OPTION_QUESTION_REGEX = /(有哪些|什么).*(选择|选项|模式|功能)|怎么选|两种方式|服务区别/;
 const CAPABILITY_QUESTION_REGEX = /(你能帮我什么|能帮我什么|你可以帮我什么|你能帮到我什么|能帮到我什么|你会做什么|你有什么用|能做什么)/;
@@ -86,6 +88,19 @@ const WEARABLE_CALORIE_QUESTION_REGEX = /(手表[^。！？]*(等量|补回|什�
 const GENERAL_QUESTION_REGEX = /[？?]|(吗|嘛|么|为什么|怎么|如何|能不能|可不可以|有没有)[。！!～~]?$/;
 const GOAL_QUESTION_REGEX = /(整体感受|整体状态|整体达到|身材目标|想达到|想改善|希望达到|最想改善|达到什么样)[^。！？\n]*[？?]/;
 const PURE_GREETING_REGEX = /^(?:你好|您好|嗨|哈喽|hello|hi|在吗|在么|早上好|中午好|晚上好|大家好)[～~!！。，,\s]*$/i;
+const UNIVERSAL_SHORT_ANSWER_REGEX = /^(?:yes|yep|yeah|ok|okay|no|nope|none)$/i;
+const NUMBER_OR_TIME_INPUT_REGEX = /^(?:\d+(?:\.\d+)?|(?:[01]?\d|2[0-3]):[0-5]\d)$/;
+const SHORT_ASCII_TOKEN_REGEX = /^[a-z][a-z'-]{0,11}$/i;
+const SLOT_SHORT_ENGLISH_ANSWERS = {
+  scene: /^(?:cafeteria|canteen|takeout|delivery|both)$/i,
+  taste: /^(?:spicy|sweet|sour|salty|bland|mild)$/i,
+  budget: /^(?:rmb|cny|yuan)$/i,
+  restrictions: /^(?:vegan|vegetarian|halal|kosher|lactose|gluten|peanut|dairy)$/i,
+  goal: /^(?:slim|fit|fitness|muscle)$/i,
+  exercise: /^(?:run|running|gym|yoga|swim|swimming|walk|walking)$/i,
+  wakeTime: /^(?:early|late|noon)$/i,
+  stayUpLate: /^(?:early|late|never|sometimes|often)$/i,
+};
 
 const FIRST_TURN_INTRO =
   '你好～我是你的私人健康饮食管理秘书，会先了解你的真实饮食习惯，再陪你一点点找到更适合自己的吃法。';
@@ -96,6 +111,41 @@ const FOOD_REJECTION_REGEX = /(不爱吃|不喜欢吃|不想吃|吃不惯|换一
 const TASTE_PROFILE_SCENE_TRANSITION =
   '如果想让我给出的搭配更符合你的口味，还需要先聊聊你平时的饮食习惯～' +
   '我们先从最基础的开始：你平时吃饭主要是食堂还是外卖呀？';
+
+function classifyHealthConcern(userText) {
+  const text = String(userText || '').trim();
+  if (!text) return null;
+  if (ALLERGY_REACTION_REGEX.test(text)) return 'possible_allergy';
+  if (GASTROINTESTINAL_REACTION_REGEX.test(text)) return 'gastrointestinal_reaction';
+  if (BODY_HEALTH_CONCERN_REGEX.test(text)) return 'other_body_concern';
+  return null;
+}
+
+function buildHealthConcernReply(category) {
+  switch (category) {
+    case 'gastrointestinal_reaction':
+      return '收到，这次吃完后的肠胃不适我记下了，后面安排时会先避开可能引起不适的食物。现在可以先喝点温水，这一顿选清淡、好消化的食物，暂时少吃油腻辛辣的东西；如果不适持续不缓解或者加重，记得及时看医生。等舒服些，我们再接着把饮食情况对完。';
+    case 'possible_allergy':
+      return '听起来像是身体在提醒你注意这类食物，我帮你记下来先避开。如果反应明显或者还在加重，建议及时看医生。等舒服些，我们再接着把饮食情况对完。';
+    case 'other_body_concern':
+      return '收到，这个身体情况我记下了。这块和饮食的关系我会在后面的安排里留意，但身体症状还是以医生的意见为准。等你方便时，我们再接着把饮食情况对完。';
+    default:
+      return null;
+  }
+}
+
+function isRecognizedShortInputForSlot(userText, slotKey) {
+  const text = String(userText || '').trim();
+  if (!text) return false;
+  if (UNIVERSAL_SHORT_ANSWER_REGEX.test(text) || NUMBER_OR_TIME_INPUT_REGEX.test(text)) return true;
+  return Boolean(SLOT_SHORT_ENGLISH_ANSWERS[slotKey]?.test(text));
+}
+
+function shouldClarifyUnrecognizedShortInput(userText, slotKey) {
+  const text = String(userText || '').trim();
+  if (!SHORT_ASCII_TOKEN_REGEX.test(text)) return false;
+  return !isRecognizedShortInputForSlot(text, slotKey);
+}
 
 const FALLBACK_SLOT_QUESTIONS = {
   scene: '我们先了解一下日常吃饭的场景：你平时主要吃食堂还是点外卖呀？',
@@ -112,6 +162,22 @@ const FALLBACK_SLOT_QUESTIONS = {
 // 产生的；在写入对话历史前确定性清掉，避免异常文本继续污染后续轮次。
 function stripOrphanLeadingColon(text) {
   return String(text || '').replace(/^[\s\uFEFF]*[：:]+\s*/u, '').trimStart();
+}
+
+// 采集未完成时，不让模型把供自己参考的已知槽位改写成
+// “好，记下了：……”的阶段总结。只清理回复开头的机械确认语和
+// 带明确字段标签的列表，不删普通的自然承接句。
+function stripPrematureKnownSlotsSummary(text) {
+  let result = String(text || '').trim();
+  result = result.replace(
+    /^(?:(?:\u597d\u561e|好呀|收到|了解了)(?=[，,：:～~\s]|$)|好(?=[，,：:～~\s]))[，,]?\s*(?:记下啦|记下了|记下来了|收到|了解了)?[～~]?[，,：:]?\s*/u,
+    ''
+  );
+  result = result.replace(
+    /^(?:(?:食堂|就餐场景|口味|预算|忌口|身材目标|目标|运动|是否运动|目前)[^：:\n]{0,18}[：:][^\n]{0,100}\n?){1,8}(?=(?:那|接下来|最后|关于|你))/u,
+    ''
+  );
+  return result.trimStart();
 }
 
 function buildFallbackSlotQuestion(slotKey, userText = '') {
@@ -554,30 +620,12 @@ async function askNextQuestion(state) {
 
   // 身体不适确定性出口（情绪链刀1c 手术 E）：用户当前消息在表达即时身体
   // 不适时，采集确定性分支（cafeteriaMode 等）不得抢先消费——人不舒服时
-  // 教练不会追着问食堂自选还是套餐。真忌口声明（detectSafetySignal...
-  // 返回非空）仍优先走安全澄清，本出口不抢。
-  const hasHealthConcernText = BODY_HEALTH_CONCERN_REGEX.test(lastUserText);
-  const healthConcernSafetySignal = hasHealthConcernText
-    ? detectSafetySignalNeedingClarification(lastUserText, state.slots?.restrictions?.value)
-    : null;
-  if (hasHealthConcernText && !healthConcernSafetySignal) {
-    const healthConcernResponse = await model.invoke([
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'system',
-        content:
-          '用户这一轮在表达身体上的不舒服（可能是吃了某样东西之后出现的）。这一轮唯一要做的是关心 TA 的身体：' +
-          '结合 TA 刚说的情况，给一两句具体、可执行的饮食方向（例如喝温水、吃清淡好消化的、暂停油腻辛辣刺激），' +
-          '并提醒持续不适或加重时及时就医。语气像一位关心 TA 的教练，自然、简短，不评判、不说教。\n' +
-          '【严格禁止】这一轮不向用户提任何问题（任何形式的确认、追问、信息收集都不行），' +
-          '不做与当下不适无关的饮食建档，不提前给完整饮食方案，也不重复空洞的安慰套话。\n' +
-          '回复以关心的陈述收尾即可，不需要以问句结束。',
-      },
-      ...state.messages,
-    ]);
-    const healthConcernReply = String(healthConcernResponse.content || '').trim();
+  // 教练不会追着问食堂自选还是套餐。已经表达明确身体反应时先按三类
+  // 确定性模板回应；只有没有明确身体反应的含糊忌口词才走后面的安全澄清。
+  const healthConcernCategory = classifyHealthConcern(lastUserText);
+  if (healthConcernCategory) {
     return {
-      messages: [{ role: 'ai', content: healthConcernReply }],
+      messages: [{ role: 'ai', content: buildHealthConcernReply(healthConcernCategory) }],
       lastAskedSlot: state.lastAskedSlot || nextSlot,
       ...(state.resumePreviousQuestion ? { resumePreviousQuestion: false } : {}),
       ...(state.emotionalSupportDeliveredThisTurn ? { emotionalSupportDeliveredThisTurn: false } : {}),
@@ -648,6 +696,16 @@ async function askNextQuestion(state) {
       }],
       // 保留当前等待字段；用户解释后仍应回答同一个问题，不能向后跳。
       lastAskedSlot: state.lastAskedSlot || nextSlot,
+    };
+  }
+  const answerContextSlot = state.lastAskedSlot || nextSlot;
+  if (shouldClarifyUnrecognizedShortInput(lastUserText, answerContextSlot)) {
+    return {
+      messages: [{
+        role: 'ai',
+        content: `我刚才没太看懂你说的“${lastUserText.trim()}”～是手滑打错字了吗？可以重新告诉我一次哈。`,
+      }],
+      lastAskedSlot: answerContextSlot,
     };
   }
   const fixedProductAnswer = getFixedProductAnswer(lastUserText);
@@ -725,7 +783,7 @@ async function askNextQuestion(state) {
 
   const taskInstruction =
     `【本轮任务】六项信息采集里，"${slotLabel}"这一项还没有确认，你这一轮需要` +
-    `把这一项问出来。已经确认的信息：\n${formatKnownSlots(state.slots)}\n\n` +
+    `把这一项问出来。已经确认的信息（只供你参考本轮该问什么，不要复述给用户）：\n${formatKnownSlots(state.slots)}\n\n` +
     '六项信息该问哪一项、进度如何，已经由外部状态决定好了（已经明确告诉你要问' +
     `"${slotLabel}"），你不需要自己判断采集进度、不需要自己决定问题顺序，只需要` +
     '结合上面完整的系统规则（对话流程/情绪优先/格式/真实性等所有规则依然全部' +
@@ -759,6 +817,9 @@ async function askNextQuestion(state) {
       : '') +
     (hasUnknownAiComparison
       ? '用户提了一个你没听过的 AI 产品/助手/大模型（或"那个什么助手"这类指代）在对比。只要语义是"它也能做到/它免费/它也有记忆/凭什么用你"，一律先按第 51 条三段式正面回应（承认→拆差别→收尾），再问采集项；名字陌生不许忽略、不许反问"你说的是什么"。\n\n'
+      : '') +
+    (isComparisonChallenge(lastUserText) || hasUnknownAiComparison
+      ? '竞品对比回应禁用医疗术语（处方、开方、诊断、治疗）；你输出的是饮食搭配建议，不是医嘱。\n\n'
       : '') +
     (hasScenarioCraving || hasHealthConcern
       ? '用户这一轮带了一个具体的饮食/身体诉求，不是对采集问题的正面回答。先接住它：' +
@@ -869,6 +930,7 @@ async function askNextQuestion(state) {
       : buildFallbackSlotQuestion(nextSlot, lastUserText);
   }
 
+  replyText = stripPrematureKnownSlotsSummary(replyText);
   replyText = normalizeFoodRejectionTransition(replyText, lastUserText, nextSlot);
   replyText = prependRestrictionAcknowledgement({
     replyText,
@@ -938,7 +1000,12 @@ module.exports = {
   composeReplyMessages,
   normalizeFoodRejectionTransition,
   TASTE_PROFILE_SCENE_TRANSITION,
+  classifyHealthConcern,
+  buildHealthConcernReply,
   stripOrphanLeadingColon,
+  stripPrematureKnownSlotsSummary,
+  isRecognizedShortInputForSlot,
+  shouldClarifyUnrecognizedShortInput,
   getRemainingCollectionSlotKeys,
   detectMisleadingCollectionProgress,
   getNewRestrictionLabel,

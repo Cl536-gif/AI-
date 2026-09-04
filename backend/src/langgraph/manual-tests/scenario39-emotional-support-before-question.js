@@ -32,10 +32,15 @@ async function main() {
   const ordinary = await provideEmotionalSupport({
     messages: [{ role: 'human', content: '我平时在食堂吃饭' }],
   });
-  if (ordinary.messages) throw new Error('普通饮食回答被过度套用情绪话术');
+  if (ordinary.emotionalSupportDeliveredThisTurn) {
+    throw new Error('普通饮食回答被过度套用情绪话术');
+  }
+  if ((ordinary.messages || []).some((message) => /焦虑|挫败|抱抱|内疚|自责/.test(message.content))) {
+    throw new Error('普通饮食回答里出现了共情话术');
+  }
 
   console.log('✅ 焦虑、坚持困难、容貌身材焦虑和进食自责均能识别');
-  console.log('✅ 首次对话顺序为身份介绍、共情与办法、后续问题');
+  console.log('✅ 首次对话保留独立身份介绍，且只有一个共情气泡');
   console.log('✅ 普通回答不会被过度共情或增加啰嗦话术');
 }
 

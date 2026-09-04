@@ -34,6 +34,13 @@ const CHAT_LANGGRAPH_URL = process.env.CHAT_LANGGRAPH_URL || 'http://localhost:3
 // 顺序：先跑不需要HTTP服务、纯节点函数调用的，再跑需要真实HTTP接口的，
 // 老架构对照放最后（跟scenario6是同一组输入，方便紧挨着对比阅读）。
 const SCRIPTS = [
+  { file: 'scene-both-cafeteria-takeout.js', needsServer: false, needsNetwork: false },
+  { file: 'health-reaction-not-anxiety.js', needsServer: false, needsNetwork: false },
+  { file: 'emotion-single-message.js', needsServer: false, needsNetwork: false },
+  { file: 'comparison-medical-terms.js', needsServer: false, needsNetwork: false },
+  { file: 'service-choice-after-clarification.js', needsServer: false, needsNetwork: false },
+  { file: 'premature-known-slots-summary.js', needsServer: false, needsNetwork: false },
+  { file: 'gibberish-typo-clarification.js', needsServer: false, needsNetwork: false },
   { file: 'scenario22-cycle-onboarding.js', needsServer: false, needsNetwork: false },
   { file: 'scenario40-browser-comments-regression.js', needsServer: false, needsNetwork: false },
   { file: 'scenario44-cafeteria-real-path-repeat.js', needsServer: true, needsNetwork: true },
