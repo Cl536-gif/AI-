@@ -1,6 +1,7 @@
 // 手动测试脚本（需要真实网络访问 DashScope，云端沙箱环境跑不了）
-// 复现测试：Bug 2（死锁）修复验证 + 结构性安全防线（意外字段首次填充
-// 必须走确认流程）落地后，对这个场景的预期更新。
+// 复现测试：Bug 2（死锁）修复验证。当旧的待确认事项未解决时，
+// resolvePendingConfirmation 仍必须继续走 extractSlots，保留用户同轮或后续
+// 主动提供的其他资料，同时不能覆盖旧的 pendingConfirmation。
 //
 // 重要：这个测试的预期在"意外字段结构性防线"上线后发生了变化，请不要
 // 把这次的"本轮丢弃"误认为死锁又复发了——两者是完全不同的性质：
@@ -50,8 +51,8 @@ async function runCase({
   caseName,
   pendingConfirmation,
   initialSlots,
-  dropTurns, // 待确认还没解决时，用户提到的意外字段信息（预期：本轮丢弃）
-  droppedFields, // dropTurns 对应期望被丢弃、这一步不应该出现变化的字段
+  dropTurns, // 待确认还没解决时，用户主动提供的其他字段信息
+  droppedFields, // 历史命名保留：现口径下这些字段应被正常捕获
   resolveTurn, // 用来解决旧待确认事项的用户回复
   expectResolvedField, // 旧待确认事项对应的字段（用来检查它最终确实有了确定的状态）
   reproTurns, // 解决完旧待确认之后，重新提起同样信息的用户回复（跟dropTurns一一对应）
@@ -71,7 +72,7 @@ async function runCase({
 
   let stepOk = true;
 
-  // 阶段A：旧确认还没解决时，意外字段新信息应该"本轮丢弃"
+  // 阶段A：旧确认还没解决时，其他字段新信息仍应被捕获。
   for (let i = 0; i < dropTurns.length; i += 1) {
     const message = dropTurns[i];
     const field = droppedFields[i];
@@ -83,14 +84,11 @@ async function runCase({
     printState('[阶段A]', state);
 
     const afterSlot = JSON.stringify(state.slots[field]);
-    if (afterSlot !== beforeSlot) {
-      console.log(`❌ 期望 ${field} 这一轮保持不变（应该被丢弃），但实际从 ${beforeSlot} 变成了 ${afterSlot}`);
-      stepOk = false;
-    } else if (state.slots[field].confirmed) {
-      console.log(`❌❌ 更严重：${field} 已经是confirmed状态，说明是之前初始状态就confirmed，测试用例设计有误`);
+    if (afterSlot === beforeSlot && state.pendingConfirmation?.field !== field) {
+      console.log(`❌ 期望 ${field} 在保留旧确认的同时被正常捕获，但实际信息丢失`);
       stepOk = false;
     } else {
-      console.log(`✅ ${field} 这一轮按预期保持不变（本轮丢弃，不是自动确认，也没有异常残留）`);
+      console.log(`✅ ${field} 在旧确认未解决时仍被正常捕获`);
     }
 
     if (!state.pendingConfirmation || state.pendingConfirmation.field !== pendingConfirmation.field) {
@@ -132,7 +130,7 @@ async function runCase({
     const gotConfirmed = state.slots[field] && state.slots[field].confirmed;
     const gotQueuedForConfirmation = state.pendingConfirmation && state.pendingConfirmation.field === field;
 
-    if (afterSlot === beforeSlot && !gotQueuedForConfirmation) {
+    if (afterSlot === beforeSlot && !gotQueuedForConfirmation && !gotConfirmed) {
       console.log(`❌ 期望重新提起后 ${field} 要么被确认、要么进入新的待确认流程，但实际什么都没发生（又一次被无声丢弃，说明有残留状态在干扰）`);
       stepOk = false;
     } else if (gotConfirmed) {
@@ -218,8 +216,8 @@ async function main() {
 
   const passCount = results.filter(Boolean).length;
   console.log(`\n\n=== 总结：${results.length}个场景里有 ${passCount} 个通过 ===`);
-  console.log('每个场景验证两件事：A) 旧确认未解决时，意外字段新信息本轮温和丢弃，不出现自动确认或状态错乱；');
-  console.log('B) 旧确认解决后，重新提起同样信息，能被正常记录（自动确认或进入新的待确认流程），不会因为上一轮丢弃过而卡住。');
+  console.log('每个场景验证两件事：A) 旧确认未解决时，其他字段新信息仍被捕获，且旧确认不被覆盖；');
+  console.log('B) 旧确认解决后，同样信息仍能正常保留或进入确认流程，不会因残留状态卡住。');
 }
 
 main().catch((err) => {

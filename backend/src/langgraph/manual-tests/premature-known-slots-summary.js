@@ -7,6 +7,10 @@ async function main() {
       '接下来聊聊运动：你平时会做什么运动呀？',
     ],
     ['收到～最后了解一下日常活动：你平时运动吗？', '最后了解一下日常活动：你平时运动吗？'],
+    [
+      '好嘾，预算15元一餐、不吃牛肉，这两点都记下啦～\n\n那最后一个小问题：最近有在运动吗？',
+      '那最后一个小问题：最近有在运动吗？',
+    ],
   ];
   for (const [input, expected] of cases) {
     const actual = stripPrematureKnownSlotsSummary(input);

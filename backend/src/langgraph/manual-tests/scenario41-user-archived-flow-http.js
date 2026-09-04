@@ -5,6 +5,7 @@ async function send(message, threadId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, threadId }),
+    signal: AbortSignal.timeout(60000),
   });
   if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
   return response.json();
@@ -31,7 +32,10 @@ async function main() {
   }
 
   let r = await turn('我很焦虑');
-  assertIncludes(joined(r), ['私人健康饮食管理秘书', '抱抱', '食堂还是外卖'], '焦虑开场');
+  assertIncludes(joined(r), ['私人健康饮食管理秘书', '抱抱'], '焦虑开场');
+  if (/食堂还是外卖/.test(joined(r))) {
+    throw new Error('情绪回复同轮仍继续了建档追问');
+  }
 
   await turn('食堂');
   await turn('自选');

@@ -139,7 +139,7 @@ async function main() {
   await scenarioFree();
   await scenarioSubscribe();
   await scenarioUnclearDefaultFree();
-  console.log('\n\n=== 三个场景全部跑完，对照上面每一步的✅/❌核对状态流转是否符合预期 ===');
+  console.log('\n\n=== 三个场景全部跑完，对照上面每一步的结果核对状态流转 ===');
 }
 
 main().catch((err) => {
